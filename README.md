@@ -44,6 +44,7 @@ claude-proxy stop
 claude-proxy clean
 claude-proxy clean claude
 claude-proxy clean openai
+claude-proxy update
 ```
 
 - `config`：交互式写入本地配置并应用配置
@@ -55,3 +56,4 @@ claude-proxy clean openai
 - `clean`：一键清除全部受管配置
 - `clean claude`：只清除 Claude 配置
 - `clean openai`：只清除 OpenAI/Codex 配置
+- `update`：Update the current claude-proxy installation（仅手动命令）

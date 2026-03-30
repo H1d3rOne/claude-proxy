@@ -158,13 +158,13 @@ function collectConfigPrompts(document = {}) {
     },
     {
       target: "base_url",
-      question: "Upstream OpenAI-compatible base_url (provider root or explicit /v1)",
+      question: "base_url",
       defaultValue: getPromptValue(document, "base_url", ""),
       required: true
     },
     {
       target: "api_key",
-      question: "Upstream API key",
+      question: "api_key",
       defaultValue: getPromptValue(document, "api_key", ""),
       required: true
     },

@@ -84,6 +84,15 @@ test("collectConfigPrompts returns all interactive fields in stable order", () =
       "codex_provider"
     ]
   );
+
+  assert.equal(
+    prompts.find((item) => item.target === "base_url")?.question,
+    "base_url"
+  );
+  assert.equal(
+    prompts.find((item) => item.target === "api_key")?.question,
+    "api_key"
+  );
 });
 
 test("getDefaultConfigPath always resolves to ~/.claude-proxy/config.toml", () => {

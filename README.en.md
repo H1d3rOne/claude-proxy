@@ -44,6 +44,7 @@ claude-proxy stop
 claude-proxy clean
 claude-proxy clean claude
 claude-proxy clean openai
+claude-proxy update
 ```
 
 - `config`: interactively write and apply local configuration
@@ -55,3 +56,4 @@ claude-proxy clean openai
 - `clean`: clear all managed configuration
 - `clean claude`: clear only Claude configuration
 - `clean openai`: clear only OpenAI/Codex configuration
+- `update`: Update the current claude-proxy installation (manual-only)

@@ -121,6 +121,21 @@ claude-proxy stop
 - `claude-proxy stop`
   停止当前受管代理进程。
 
+### 更新命令
+
+```bash
+claude-proxy update
+```
+
+- `update`
+  Update the current claude-proxy installation（仅手动命令；无自动更新）。
+
+  在源码/`git` 安装模式下，命令会先检查 `git status --porcelain`。只要该命令有任何输出（包括未提交修改或未跟踪文件），就会直接报错并中止。命令成功时依次执行 `git pull --ff-only`、`npm install`、`npm link` 来拉取代码、安装依赖并保持可执行命令指向本地源码。
+
+  当当前安装目录不是 `git` 工作区时，`update` 会走 `npm` 更新路径，执行 `npm install -g @h1d3rone/claude-proxy@latest`。这通常对应全局 `npm install -g @h1d3rone/claude-proxy` 安装。
+
+  该命令不接收 `--config`，所有配置相关工作应在 `config` 命令里完成。
+
 ## 配置文件
 
 默认配置文件路径：
