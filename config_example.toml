@@ -1,0 +1,11 @@
+server_host = "127.0.0.1"
+server_port = 8082
+base_url = ""
+api_key = ""
+big_model = "gpt-5.4"
+middle_model = "gpt-5.3-codex"
+small_model = "gpt-5.2-codex"
+default_claude_model = "opus[1m]"
+home_dir = "~"
+claude_dir = "~/.claude"
+codex_dir = "~/.codex"

@@ -1,0 +1,34 @@
+{
+  "name": "claude-proxy",
+  "version": "0.1.0",
+  "description": "Node.js rewrite of claude-code-proxy with local Claude and Codex configuration management",
+  "bin": {
+    "claude-proxy": "./src/cli.js"
+  },
+  "files": [
+    "src",
+    "README.md",
+    "config_example.toml"
+  ],
+  "scripts": {
+    "start": "node ./src/cli.js start",
+    "stop": "node ./src/cli.js stop",
+    "config": "node ./src/cli.js config",
+    "config:claude": "node ./src/cli.js config claude",
+    "config:openai": "node ./src/cli.js config openai",
+    "config:get": "node ./src/cli.js config get",
+    "clean": "node ./src/cli.js clean",
+    "clean:claude": "node ./src/cli.js clean claude",
+    "clean:openai": "node ./src/cli.js clean openai",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@iarna/toml": "^2.2.5",
+    "commander": "^13.1.0",
+    "express": "^4.21.2",
+    "toml": "^3.0.0"
+  }
+}
