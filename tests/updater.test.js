@@ -7,11 +7,30 @@ const fsPromises = require("node:fs/promises");
 const projectRoot = path.resolve(__dirname, "..");
 const updaterPath = require.resolve("../src/services/updater");
 
-function makeFsStat(hasGit) {
+function makeFsStat(input = {}) {
+  const options =
+    typeof input === "boolean" ? { hasGit: input, rootExists: true } : input;
+  const { hasGit = true, rootExists = true } = options;
+
   return async (target) => {
-    if (target.endsWith(".git") && hasGit) {
+    if (path.resolve(target) === projectRoot) {
+      if (!rootExists) {
+        const error = new Error("ENOENT");
+        error.code = "ENOENT";
+        throw error;
+      }
       return {};
     }
+
+    if (target.endsWith(".git")) {
+      if (hasGit) {
+        return {};
+      }
+      const error = new Error("ENOENT");
+      error.code = "ENOENT";
+      throw error;
+    }
+
     const error = new Error("ENOENT");
     error.code = "ENOENT";
     throw error;
@@ -164,6 +183,70 @@ test("runUpdate dispatches to git when .git exists and to npm otherwise", async 
       assert.deepEqual(recorded.map((call) => call.args), [["install", "-g", "@h1d3rone/claude-proxy@latest"]]);
       assert.deepEqual(recorded.map((call) => call.command), ["npm"]);
       assert.equal(recorded[0].options.cwd, undefined);
+    }
+  );
+});
+
+test("detectInstallMode fails when project root missing", async () => {
+  await withMocks(
+    { fsStat: makeFsStat({ rootExists: false }) },
+    async (updater) => {
+      await assert.rejects(
+        updater.detectInstallMode(projectRoot),
+        { code: "ENOENT" }
+      );
+    }
+  );
+});
+
+test("updateFromNpm surfaces spawn failures with detail", async () => {
+  const spawnError = new Error("spawn npm ENOENT");
+  spawnError.code = "ENOENT";
+  const spawn = createSpawnRecorder(() => ({ error: spawnError }));
+  await withMocks(
+    { spawnSync: spawn.spawnSync },
+    async (updater) => {
+      await assert.rejects(
+        async () => updater.updateFromNpm(),
+        /Failed to spawn npm install -g @h1d3rone\/claude-proxy@latest: ENOENT/
+      );
+    }
+  );
+});
+
+test("updateFromNpm surfaces non-zero exit codes", async () => {
+  const spawn = createSpawnRecorder(() => ({ status: 7, stdout: "" }));
+  await withMocks(
+    { spawnSync: spawn.spawnSync },
+    async (updater) => {
+      await assert.rejects(
+        async () => updater.updateFromNpm(),
+        /exited with code 7/
+      );
+    }
+  );
+});
+
+test("updateFromGit surfaces signal termination on pull", async () => {
+  const spawn = createSpawnRecorder(({ args }) => {
+    if (args[0] === "status") {
+      return { status: 0, stdout: "" };
+    }
+    if (args[0] === "pull") {
+      return { signal: "SIGTERM" };
+    }
+    return { status: 0, stdout: "" };
+  });
+  await withMocks(
+    {
+      fsStat: makeFsStat(true),
+      spawnSync: spawn.spawnSync
+    },
+    async (updater) => {
+      await assert.rejects(
+        updater.updateFromGit(projectRoot),
+        { message: /terminated by signal SIGTERM/ }
+      );
     }
   );
 });

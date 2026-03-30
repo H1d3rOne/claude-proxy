@@ -15,6 +15,12 @@ function resolveGitDir(projectRoot) {
 
 async function detectInstallMode(projectRoot) {
   try {
+    await fs.stat(projectRoot);
+  } catch (error) {
+    throw error;
+  }
+
+  try {
     await fs.stat(resolveGitDir(projectRoot));
     return "git";
   } catch (error) {
@@ -29,14 +35,22 @@ function executeCommand(command, args, options = {}) {
   const spawnOptions = { stdio: "inherit", ...options };
   const result = spawnSync(command, args, spawnOptions);
   if (result.error) {
-    const wrapped = new Error(`Command failed: ${command} ${args.join(" ")}`);
+    const detail = result.error.code || result.error.message || "spawn failure";
+    const wrapped = new Error(
+      `Failed to spawn ${command} ${args.join(" ")}: ${detail}`
+    );
     wrapped.cause = result.error;
     throw wrapped;
   }
+  if (result.signal) {
+    throw new Error(
+      `Command terminated by signal ${result.signal}: ${command} ${args.join(" ")}`
+    );
+  }
   if (result.status !== 0) {
-    const wrapped = new Error(`Command failed: ${command} ${args.join(" ")}`);
-    wrapped.exitCode = result.status;
-    throw wrapped;
+    throw new Error(
+      `Command exited with code ${result.status}: ${command} ${args.join(" ")}`
+    );
   }
   return result;
 }
