@@ -7,7 +7,7 @@
 
 ## 项目说明
 
-`claude-proxy` 是一个本地单机版 Claude 代理工具。它会在本机提供 Claude 兼容的 `/v1/messages` 服务，把请求转发到 OpenAI 兼容上游，并管理 Claude Code 与 Codex 的本地配置。
+`claude-proxy` 是一个本地版 Claude code代理工具。它会在本机提供 Claude 兼容的 `中转站的codex模型` 服务，把请求转发到 OpenAI 兼容上游，并管理 Claude Code 与 Codex 的本地配置。
 
 ## 安装
 
