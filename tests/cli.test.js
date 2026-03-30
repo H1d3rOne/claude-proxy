@@ -52,6 +52,21 @@ test("cli help exposes local-only public commands and hides internal commands", 
   assert.doesNotMatch(stdout, /--host/);
   assert.doesNotMatch(stdout, /--include-disabled/);
   assert.doesNotMatch(stdout, /\binternal\b/);
+  assert.match(stdout, /\bupdate\b/);
+  assert.match(stdout, /claude-proxy update\s+Update the current claude-proxy installation/);
+  assert.match(stdout, /claude-proxy help update/);
+});
+
+test("help update presents usage and the update description", async () => {
+  const { stdout, stderr } = await execFileAsync(
+    process.execPath,
+    ["./src/cli.js", "help", "update"],
+    { cwd: projectRoot }
+  );
+
+  assert.equal(stderr, "");
+  assert.match(stdout, /Usage: claude-proxy update/);
+  assert.match(stdout, /Update the current claude-proxy installation/);
 });
 
 test("config help exposes get plus optional claude/openai subcommands", async () => {

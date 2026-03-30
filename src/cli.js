@@ -23,6 +23,7 @@ const {
 } = require("./services/client-config-manager");
 const { ensureProxy, stopProxy } = require("./services/host-manager");
 const { startServer } = require("./proxy/server");
+const { runUpdate } = require("./services/updater");
 const { pathExists, readJson } = require("./utils");
 
 const PROJECT_ROOT = path.resolve(__dirname, "..");
@@ -247,6 +248,8 @@ async function main() {
       "    Restore Claude settings from backups",
       "  claude-proxy clean openai",
       "    Restore OpenAI/Codex settings from backups",
+      "  claude-proxy update",
+      "    Update the current claude-proxy installation",
       "  claude-proxy start",
       "    Start the local proxy server only",
       "  claude-proxy stop",
@@ -258,6 +261,7 @@ async function main() {
       "  claude-proxy help start",
       "  claude-proxy help stop",
       "  claude-proxy help clean",
+      "  claude-proxy help update",
       ""
     ].join("\n")
   );
@@ -419,6 +423,22 @@ async function main() {
         runtimeProjectRoot: PROJECT_ROOT
       });
       await cleanOpenAIConfig(config);
+    });
+
+  program
+    .command("update")
+    .description("Update the current claude-proxy installation")
+    .addHelpText(
+      "after",
+      [
+        "",
+        "Help:",
+        "  claude-proxy help update",
+        ""
+      ].join("\n")
+    )
+    .action(async () => {
+      await runUpdate(PROJECT_ROOT);
     });
 
   program.addCommand(cleanCommand);
