@@ -109,6 +109,7 @@ test("updateFromGit runs git pull, npm install, and npm link in order when clean
         ["install"],
         ["link"]
       ]);
+      assert.deepEqual(recorded.map((call) => call.command), ["git", "git", "npm", "npm"]);
       for (const call of recorded) {
         assert.equal(call.options.cwd, projectRoot);
       }
@@ -124,6 +125,7 @@ test("updateFromNpm installs the latest scoped package globally", async () => {
       await updater.updateFromNpm();
       const recorded = spawn.calls;
       assert.deepEqual(recorded.map((call) => call.args), [["install", "-g", "@h1d3rone/claude-proxy@latest"]]);
+      assert.deepEqual(recorded.map((call) => call.command), ["npm"]);
       assert.equal(recorded[0].options.cwd, undefined);
     }
   );
@@ -139,7 +141,13 @@ test("runUpdate dispatches to git when .git exists and to npm otherwise", async 
     async (updater) => {
       await updater.runUpdate(projectRoot);
       const recorded = gitSpawn.calls;
-      assert.deepEqual(recorded[0].args, ["status", "--porcelain"]);
+      assert.deepEqual(recorded.map((call) => call.args), [
+        ["status", "--porcelain"],
+        ["pull", "--ff-only"],
+        ["install"],
+        ["link"]
+      ]);
+      assert.deepEqual(recorded.map((call) => call.command), ["git", "git", "npm", "npm"]);
       assert.equal(recorded[0].options.cwd, projectRoot);
     }
   );
@@ -154,6 +162,7 @@ test("runUpdate dispatches to git when .git exists and to npm otherwise", async 
       await updater.runUpdate(projectRoot);
       const recorded = npmSpawn.calls;
       assert.deepEqual(recorded.map((call) => call.args), [["install", "-g", "@h1d3rone/claude-proxy@latest"]]);
+      assert.deepEqual(recorded.map((call) => call.command), ["npm"]);
       assert.equal(recorded[0].options.cwd, undefined);
     }
   );
