@@ -1,6 +1,6 @@
 {
-  "name": "claude-proxy",
-  "version": "0.1.0",
+  "name": "@h1d3rone/claude-proxy",
+  "version": "0.1.1",
   "description": "Node.js rewrite of claude-code-proxy with local Claude and Codex configuration management",
   "bin": {
     "claude-proxy": "./src/cli.js"
@@ -10,6 +10,10 @@
     "README.md",
     "config_example.toml"
   ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
   "scripts": {
     "start": "node ./src/cli.js start",
     "stop": "node ./src/cli.js stop",

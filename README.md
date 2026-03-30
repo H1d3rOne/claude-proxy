@@ -1,154 +1,107 @@
 # claude-proxy
 
-`claude-proxy` is a Node.js rewrite of `claude-code-proxy` plus a local setup tool for Claude Code and Codex.
+## 中文
 
-It provides:
+### 项目说明
 
-- a Claude-compatible `/v1/messages` proxy backed by an OpenAI-compatible upstream
-- `claude-proxy config` to interactively configure the full local proxy and patch Claude Code and Codex config
-- `claude-proxy config claude` to configure only the Claude-owned settings
-- `claude-proxy config openai` to configure only the OpenAI/Codex-owned settings
-- `claude-proxy config get` to show the current local proxy, Claude, and Codex configuration summary
-- `claude-proxy clean` to restore all managed files and clear Claude/OpenAI-owned config fields
-- `claude-proxy clean claude` to restore Claude files from backups
-- `claude-proxy clean openai` to restore Codex/OpenAI files from backups
-- `claude-proxy start` and `claude-proxy stop` to manage the local proxy process directly
+`claude-proxy` 是一个本地单机版 Claude 代理工具。它会在本机提供 Claude 兼容的 `/v1/messages` 服务，把请求转发到 OpenAI 兼容上游，并管理 Claude Code 与 Codex 的本地配置。
 
-## Commands
+### 安装
+
+`npm` 快速安装：
 
 ```bash
-npm install
-npm test
-npm link
+npm install -g @h1d3rone/claude-proxy
+claude-proxy config
+```
 
+提示：包名带作用域，但实际命令仍然是 `claude-proxy`。
+
+Git 源码安装：
+
+```bash
+git clone https://github.com/H1d3rOne/claude-proxy.git
+cd claude-proxy
+npm install
+npm link
+claude-proxy config
+```
+
+### 使用方法
+
+```bash
 claude-proxy config
 claude-proxy config claude
 claude-proxy config openai
 claude-proxy config get
+
+claude-proxy start
+claude-proxy stop
+
 claude-proxy clean
 claude-proxy clean claude
 claude-proxy clean openai
-claude-proxy start
-claude-proxy stop
 ```
 
-## Install After Publishing
+- `config`：交互式写入本地配置并应用配置
+- `config claude`：只配置 Claude 相关部分
+- `config openai`：只配置 OpenAI/Codex 相关部分
+- `config get`：查看配置文件、Claude、Codex 当前状态
+- `start`：启动本地代理服务器
+- `stop`：停止本地代理服务器
+- `clean`：一键清除全部受管配置
+- `clean claude`：只清除 Claude 配置
+- `clean openai`：只清除 OpenAI/Codex 配置
 
-Install globally to run from any directory:
+## English
+
+### Overview
+
+`claude-proxy` is a local single-machine Claude proxy. It exposes a Claude-compatible `/v1/messages` endpoint, forwards requests to an OpenAI-compatible upstream, and manages local Claude Code and Codex configuration.
+
+### Installation
+
+Quick install with `npm`:
 
 ```bash
-npm install -g claude-proxy
+npm install -g @h1d3rone/claude-proxy
 claude-proxy config
 ```
 
-Or run without a global install:
+Note: the published package is scoped, but the command name is still `claude-proxy`.
+
+Install from Git source:
 
 ```bash
-npx claude-proxy config
+git clone https://github.com/H1d3rOne/claude-proxy.git
+cd claude-proxy
+npm install
+npm link
+claude-proxy config
 ```
 
-For automatic Claude start/stop hooks, `claude-proxy` must be available on `PATH`. A global install is the intended setup.
+### Usage
 
-## What `config` Does
+```bash
+claude-proxy config
+claude-proxy config claude
+claude-proxy config openai
+claude-proxy config get
 
-`claude-proxy config` will:
+claude-proxy start
+claude-proxy stop
 
-- prompt for each config item in `~/.claude-proxy/config.toml`
-- update `~/.codex/config.toml` so the active provider uses the configured `base_url`
-- update `~/.codex/auth.json` so `OPENAI_API_KEY` matches the configured `api_key`
-- update `~/.claude/settings.json` so Claude uses `ANTHROPIC_BASE_URL=http://localhost:8082`
-- set `ANTHROPIC_API_KEY` to the fixed placeholder value `arbitrary value`
-- install Claude `SessionStart` and `SessionEnd` hooks which auto-start and auto-stop the proxy
-- write the config file and apply local Claude/Codex settings only
+claude-proxy clean
+claude-proxy clean claude
+claude-proxy clean openai
+```
 
-## What `config claude` Does
-
-`claude-proxy config claude` will:
-
-- prompt only for Claude-owned config fields in `~/.claude-proxy/config.toml`
-- update Claude settings and hooks only
-- leave Codex/OpenAI files untouched
-
-## What `config openai` Does
-
-`claude-proxy config openai` will:
-
-- prompt only for OpenAI/Codex-owned config fields in `~/.claude-proxy/config.toml`
-- update Codex config and auth only
-- leave Claude files untouched
-
-## What `config get` Does
-
-`claude-proxy config get` will:
-
-- show the current config file path and effective config values
-- show key Claude settings and whether the managed hooks are installed
-- show key Codex config and auth values
-
-## What `clean` Does
-
-`claude-proxy clean` will:
-
-- restore all managed Claude and Codex files from backups created during `config`
-- remove Claude-owned and OpenAI/Codex-owned fields from `~/.claude-proxy/config.toml`
-- leave any currently running proxy process untouched
-
-## What `clean claude` Does
-
-`claude-proxy clean claude` will:
-
-- remove the Claude hooks installed by this project
-- restore the original Claude settings file from backups created during `config`
-- remove Claude-owned fields from `~/.claude-proxy/config.toml`
-- leave Codex/OpenAI files untouched
-- leave any currently running proxy process untouched
-
-## What `clean openai` Does
-
-`claude-proxy clean openai` will:
-
-- restore the original Codex config and auth files from backups created during `config`
-- remove OpenAI/Codex-owned fields from `~/.claude-proxy/config.toml`
-- leave Claude settings untouched
-- leave any currently running proxy process untouched
-
-## What `start` Does
-
-`claude-proxy start` will:
-
-- read the local config file
-- start the local proxy server in the foreground
-
-## What `stop` Does
-
-`claude-proxy stop` will:
-
-- stop the managed local proxy process if it is running
-
-## Config
-
-By default the CLI uses:
-
-- `~/.claude-proxy/config.toml`
-
-You can always override this with `--config /path/to/config.toml`.
-
-The config file format matches [config_example.toml](./config_example.toml).
-
-- `server_host`: proxy listen host, defaults to `127.0.0.1`
-- `server_port`: proxy listen port, defaults to `8082`
-- `base_url`: upstream OpenAI-compatible API base URL
-  If you use a provider root such as `https://newapis.xyz`, the Claude proxy will automatically send chat-completions traffic to `/v1/chat/completions`.
-- `api_key`: upstream provider API key
-- `big_model`, `middle_model`, `small_model`: Claude-to-upstream model mapping
-- `default_claude_model`: Claude UI default model
-- `home_dir`: base home directory, defaults to `~`
-- `claude_dir`: Claude config directory, defaults to `~/.claude`
-- `codex_dir`: Codex config directory, defaults to `~/.codex`
-- `codex_provider`: optional Codex provider name to patch
-
-Section ownership:
-
-- `config claude` / `clean claude`: `server_port`, `big_model`, `middle_model`, `small_model`, `default_claude_model`, `claude_dir`
-- `config openai` / `clean openai`: `base_url`, `api_key`, `codex_dir`, `codex_provider`
-- `config` / `clean`: all managed fields above
+- `config`: interactively write and apply local configuration
+- `config claude`: configure only Claude-related settings
+- `config openai`: configure only OpenAI/Codex-related settings
+- `config get`: show current config-file, Claude, and Codex state
+- `start`: start the local proxy server
+- `stop`: stop the local proxy server
+- `clean`: clear all managed configuration
+- `clean claude`: clear only Claude configuration
+- `clean openai`: clear only OpenAI/Codex configuration
