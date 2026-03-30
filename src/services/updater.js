@@ -41,12 +41,12 @@ function executeCommand(command, args, options = {}) {
   return result;
 }
 
-function runCommand(command, args) {
-  return executeCommand(command, args);
+function runCommand(command, args, options = {}) {
+  return executeCommand(command, args, options);
 }
 
-function runCommandWithOutput(command, args) {
-  const result = executeCommand(command, args, { stdio: ["ignore", "pipe", "inherit"] });
+function runCommandWithOutput(command, args, options = {}) {
+  const result = executeCommand(command, args, { ...options, stdio: ["ignore", "pipe", "inherit"] });
   if (result.stdout && result.stdout.length > 0) {
     process.stdout.write(result.stdout);
   }
@@ -57,15 +57,15 @@ function runCommandWithOutput(command, args) {
 }
 
 async function updateFromGit(projectRoot) {
-  const statusResult = runCommandWithOutput("git", gitStatusArgs);
+  const statusResult = runCommandWithOutput("git", gitStatusArgs, { cwd: projectRoot });
   const rawStatus = statusResult.stdout ?? Buffer.alloc(0);
   const text = typeof rawStatus === "string" ? rawStatus : rawStatus.toString("utf8");
   if (text.trim()) {
     throw new Error("Update aborted: git working tree has uncommitted changes");
   }
-  runCommand("git", gitPullArgs);
-  runCommand("npm", npmInstallArgs);
-  runCommand("npm", npmLinkArgs);
+  runCommand("git", gitPullArgs, { cwd: projectRoot });
+  runCommand("npm", npmInstallArgs, { cwd: projectRoot });
+  runCommand("npm", npmLinkArgs, { cwd: projectRoot });
 }
 
 function updateFromNpm() {

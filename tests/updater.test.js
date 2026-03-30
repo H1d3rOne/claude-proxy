@@ -25,7 +25,11 @@ function createSpawnRecorder(responseFactory) {
       return calls;
     },
     spawnSync(command, args, options) {
-      calls.push({ command, args, options });
+      calls.push({
+        command,
+        args: [...args],
+        options: options ? { ...options } : {}
+      });
       return responseFactory({ command, args, options });
     }
   };
@@ -84,16 +88,13 @@ test("updateFromGit aborts when git status reports uncommitted changes", async (
       );
       assert.equal(spawn.calls.length, 1);
       assert.deepEqual(spawn.calls[0].args, ["status", "--porcelain"]);
+      assert.equal(spawn.calls[0].options.cwd, projectRoot);
     }
   );
 });
 
 test("updateFromGit runs git pull, npm install, and npm link in order when clean", async () => {
-  const calls = [];
-  const spawn = createSpawnRecorder(({ args }) => {
-    calls.push([...args]);
-    return { status: 0, stdout: "" };
-  });
+  const spawn = createSpawnRecorder(() => ({ status: 0, stdout: "" }));
   await withMocks(
     {
       fsStat: makeFsStat(true),
@@ -101,37 +102,35 @@ test("updateFromGit runs git pull, npm install, and npm link in order when clean
     },
     async (updater) => {
       await updater.updateFromGit(projectRoot);
-      assert.deepEqual(calls, [
+      const recorded = spawn.calls;
+      assert.deepEqual(recorded.map((call) => call.args), [
         ["status", "--porcelain"],
         ["pull", "--ff-only"],
         ["install"],
         ["link"]
       ]);
+      for (const call of recorded) {
+        assert.equal(call.options.cwd, projectRoot);
+      }
     }
   );
 });
 
 test("updateFromNpm installs the latest scoped package globally", async () => {
-  const calls = [];
-  const spawn = createSpawnRecorder(({ args }) => {
-    calls.push([...args]);
-    return { status: 0, stdout: "" };
-  });
+  const spawn = createSpawnRecorder(() => ({ status: 0, stdout: "" }));
   await withMocks(
     { spawnSync: spawn.spawnSync },
     async (updater) => {
       await updater.updateFromNpm();
-      assert.deepEqual(calls, [["install", "-g", "@h1d3rone/claude-proxy@latest"]]);
+      const recorded = spawn.calls;
+      assert.deepEqual(recorded.map((call) => call.args), [["install", "-g", "@h1d3rone/claude-proxy@latest"]]);
+      assert.equal(recorded[0].options.cwd, undefined);
     }
   );
 });
 
 test("runUpdate dispatches to git when .git exists and to npm otherwise", async () => {
-  const gitCalls = [];
-  const gitSpawn = createSpawnRecorder(({ args }) => {
-    gitCalls.push([...args]);
-    return { status: 0, stdout: "" };
-  });
+  const gitSpawn = createSpawnRecorder(() => ({ status: 0, stdout: "" }));
   await withMocks(
     {
       fsStat: makeFsStat(true),
@@ -139,15 +138,13 @@ test("runUpdate dispatches to git when .git exists and to npm otherwise", async 
     },
     async (updater) => {
       await updater.runUpdate(projectRoot);
-      assert.deepEqual(gitCalls[0], ["status", "--porcelain"]);
+      const recorded = gitSpawn.calls;
+      assert.deepEqual(recorded[0].args, ["status", "--porcelain"]);
+      assert.equal(recorded[0].options.cwd, projectRoot);
     }
   );
 
-  const npmCalls = [];
-  const npmSpawn = createSpawnRecorder(({ args }) => {
-    npmCalls.push([...args]);
-    return { status: 0, stdout: "" };
-  });
+  const npmSpawn = createSpawnRecorder(() => ({ status: 0, stdout: "" }));
   await withMocks(
     {
       fsStat: makeFsStat(false),
@@ -155,7 +152,9 @@ test("runUpdate dispatches to git when .git exists and to npm otherwise", async 
     },
     async (updater) => {
       await updater.runUpdate(projectRoot);
-      assert.deepEqual(npmCalls, [["install", "-g", "@h1d3rone/claude-proxy@latest"]]);
+      const recorded = npmSpawn.calls;
+      assert.deepEqual(recorded.map((call) => call.args), [["install", "-g", "@h1d3rone/claude-proxy@latest"]]);
+      assert.equal(recorded[0].options.cwd, undefined);
     }
   );
 });
