@@ -22,6 +22,7 @@ function createHostFixture(rootDir) {
 
   return {
     name: "local host",
+    profile_name: "Personal Workspace",
     type: "local",
     base_url: "https://host-specific.example/v1",
     api_key: "host-openai-key",
@@ -30,7 +31,7 @@ function createHostFixture(rootDir) {
     middle_model: "gpt-5.3-codex",
     small_model: "gpt-5.2-codex",
     default_claude_model: "opus[1m]",
-    codex_provider: null,
+    model_provider: "personal",
     project_root: projectRoot,
     claude_dir: claudeDir,
     codex_dir: codexDir,
@@ -119,7 +120,12 @@ test("applyManagedHostConfig patches Claude and Codex files and split clean comm
   );
 
   const patchedCodexConfig = await fs.readFile(host.codex_config_path, "utf8");
+  assert.match(patchedCodexConfig, /model_provider = "personal"/);
+  assert.match(patchedCodexConfig, /name = "Personal Workspace"/);
+  assert.match(patchedCodexConfig, /\[model_providers\.personal\]/);
+  assert.match(patchedCodexConfig, /\[model_providers\.personal\][\s\S]*name = "Personal Workspace"/);
   assert.match(patchedCodexConfig, /base_url = "https:\/\/host-specific\.example\/v1"/);
+  assert.doesNotMatch(patchedCodexConfig, /\[model_providers\.custom\]/);
 
   const patchedAuth = JSON.parse(await fs.readFile(host.codex_auth_path, "utf8"));
   assert.equal(patchedAuth.OPENAI_API_KEY, "host-openai-key");
@@ -223,7 +229,8 @@ test("partial config apply updates only the requested section and managed state"
   const openAiOnlyConfig = {
     api_key: "new-openai-key",
     base_url: "https://new-upstream.example/v1",
-    codex_provider: null,
+    model_provider: "workspace",
+    profile_name: "Workspace Provider",
     __configPath: path.join(rootDir, "config.toml")
   };
   host.big_model = undefined;
@@ -232,7 +239,7 @@ test("partial config apply updates only the requested section and managed state"
   host.default_claude_model = undefined;
   host.base_url = undefined;
   host.api_key = undefined;
-  host.codex_provider = undefined;
+  host.model_provider = undefined;
 
   await fs.mkdir(host.project_root, { recursive: true });
   await fs.mkdir(host.claude_dir, { recursive: true });
@@ -284,6 +291,10 @@ test("partial config apply updates only the requested section and managed state"
   await applyOpenAIManagedHostConfig(openAiOnlyConfig, host);
 
   const codexConfigAfterOpenAIApply = await fs.readFile(host.codex_config_path, "utf8");
+  assert.match(codexConfigAfterOpenAIApply, /model_provider = "workspace"/);
+  assert.match(codexConfigAfterOpenAIApply, /name = "Workspace Provider"/);
+  assert.match(codexConfigAfterOpenAIApply, /\[model_providers\.workspace\]/);
+  assert.match(codexConfigAfterOpenAIApply, /\[model_providers\.workspace\][\s\S]*name = "Workspace Provider"/);
   assert.match(codexConfigAfterOpenAIApply, /base_url = "https:\/\/new-upstream\.example\/v1"/);
   const codexAuthAfterOpenAIApply = JSON.parse(await fs.readFile(host.codex_auth_path, "utf8"));
   assert.equal(codexAuthAfterOpenAIApply.OPENAI_API_KEY, "new-openai-key");

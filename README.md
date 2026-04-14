@@ -15,7 +15,7 @@
 
 ```bash
 npm install -g @h1d3rone/claude-proxy
-claude-proxy config
+claude-proxy config add
 ```
 
 提示：包名带作用域，但实际命令仍然是 `claude-proxy`。
@@ -27,15 +27,17 @@ git clone https://github.com/H1d3rOne/claude-proxy.git
 cd claude-proxy
 npm install
 npm link
-claude-proxy config
+claude-proxy config add
 ```
 
 ## 使用方法
 
 ```bash
-claude-proxy config
+claude-proxy config add
+claude-proxy config use
+claude-proxy config alt
+claude-proxy config del
 claude-proxy config claude
-claude-proxy config openai
 claude-proxy config get
 
 claude-proxy start
@@ -47,9 +49,11 @@ claude-proxy clean openai
 claude-proxy update
 ```
 
-- `config`：交互式写入本地配置并应用配置
+- `config add`：新增一组命名上游配置
+- `config use`：从已有配置中选择当前配置，并同步 `model_provider` / `name` / provider 节点 / `base_url` / `api_key` 到 Codex
+- `config alt`：直接修改某个已保存的上游配置，包括 profile 的 `name`，不切换当前活动配置
+- `config del`：删除一个非当前激活的配置
 - `config claude`：只配置 Claude 相关部分
-- `config openai`：只配置 OpenAI/Codex 相关部分
 - `config get`：查看配置文件、Claude、Codex 当前状态
 - `start`：启动本地代理服务器
 - `stop`：停止本地代理服务器

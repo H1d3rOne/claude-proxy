@@ -10,7 +10,7 @@
 - 交互式生成和维护 `~/.claude-proxy/config.toml`
 - 自动修改 `~/.claude/settings.json`，让 Claude Code 走本地代理
 - 自动修改 `~/.codex/config.toml` 和 `~/.codex/auth.json`
-- 支持全量配置/清理，也支持只处理 `claude` 或 `openai` 单项
+- 支持多组命名上游配置，并可切换当前活动配置
 - 支持 Claude 会话开始自动启动代理、结束自动停止代理
 - 只支持本机，不再支持远端主机配置
 
@@ -43,10 +43,12 @@ npm test
 
 ## 快速开始
 
-1. 全量配置：
+1. 新增并选择一个 profile：
 
 ```bash
-claude-proxy config
+claude-proxy config add
+claude-proxy config use
+claude-proxy config claude
 ```
 
 2. 查看当前配置：
@@ -61,27 +63,35 @@ claude-proxy config get
 claude-proxy start
 ```
 
-如果已经执行过 `claude-proxy config`，Claude Code 会在会话开始时自动检查代理是否已运行，未运行则启动；会话结束时自动停止。
+如果已经执行过 `claude-proxy config claude`，Claude Code 会在会话开始时自动检查代理是否已运行，未运行则启动；会话结束时自动停止。
 
 ## 命令
 
 ### 配置命令
 
 ```bash
-claude-proxy config
+claude-proxy config add
+claude-proxy config use
+claude-proxy config alt
+claude-proxy config del
 claude-proxy config claude
-claude-proxy config openai
 claude-proxy config get
 ```
 
-- `claude-proxy config`
-  交互式配置全部字段，并同时应用到 Claude Code 和 Codex。
+- `claude-proxy config add`
+  新增一个命名上游配置，只写入 `config.toml`，不立即改动 Claude 或 Codex。
+
+- `claude-proxy config use`
+  从已有配置中选择当前活动配置，并同步该配置的 `model_provider` / `name` / provider 节点 / `base_url` / `api_key` 到 Codex。
+
+- `claude-proxy config alt`
+  直接修改某个已保存的 profile，包括 `name` 字段，不切换当前活动配置，也不直接改动 Claude 或 Codex。
+
+- `claude-proxy config del`
+  删除一个非当前活动的上游配置。
 
 - `claude-proxy config claude`
-  只配置 Claude 相关字段，并只更新 Claude 配置。
-
-- `claude-proxy config openai`
-  只配置 OpenAI/Codex 相关字段，并只更新 Codex 配置。
+  配置 Claude 相关字段，并只更新 Claude 配置。
 
 - `claude-proxy config get`
   显示配置文件、Claude、Codex 的当前状态。
@@ -147,40 +157,24 @@ claude-proxy update
 也可以用 `--config` 指定：
 
 ```bash
-claude-proxy config --config /path/to/config.toml
+claude-proxy config add --config /path/to/config.toml
+claude-proxy config use --config /path/to/config.toml
+claude-proxy config alt --config /path/to/config.toml
+claude-proxy config del --config /path/to/config.toml
 claude-proxy config claude --config /path/to/config.toml
-claude-proxy config openai --config /path/to/config.toml
 claude-proxy config get --config /path/to/config.toml
 claude-proxy clean --config /path/to/config.toml
 ```
 
 参考示例见 [config_example.toml](../config_example.toml)。
 
-### 配置项
+### 顶层配置项
 
 - `server_host`
   代理监听地址，默认 `127.0.0.1`
 
 - `server_port`
   代理监听端口，默认 `8082`
-
-- `base_url`
-  OpenAI 兼容上游地址
-
-- `api_key`
-  上游 API Key
-
-- `big_model`
-  Claude `opus` 请求映射到的上游模型
-
-- `middle_model`
-  Claude `sonnet` 请求映射到的上游模型
-
-- `small_model`
-  Claude `haiku` 请求映射到的上游模型
-
-- `default_claude_model`
-  Claude Code 默认模型
 
 - `home_dir`
   家目录基路径，默认 `~`
@@ -191,34 +185,44 @@ claude-proxy clean --config /path/to/config.toml
 - `codex_dir`
   Codex 配置目录，默认 `~/.codex`
 
-- `codex_provider`
-  Codex 中要修改的 provider 名称，可选
+- `active_profile`
+  当前活动配置名
 
-### 字段归属
+### `[[profiles]]` 配置项
 
-`claude-proxy config claude` / `claude-proxy clean claude` 管理这些字段：
+每个 profile 都包含这些字段：
 
-- `server_port`
+- `name`
+- `model_provider`
+- `base_url`
+- `api_key`
 - `big_model`
 - `middle_model`
 - `small_model`
 - `default_claude_model`
-- `claude_dir`
 
-`claude-proxy config openai` / `claude-proxy clean openai` 管理这些字段：
+### 命令与字段关系
 
-- `base_url`
-- `api_key`
-- `codex_dir`
-- `codex_provider`
+- `claude-proxy config add`
+  新增一个 `[[profiles]]` 项
 
-`claude-proxy config` / `claude-proxy clean` 会处理以上全部受管字段。
+- `claude-proxy config use`
+  切换 `active_profile`，然后把所选 profile 的 `model_provider` / `name` / provider 节点 / `base_url` / `api_key` 写入 Codex
+
+- `claude-proxy config alt`
+  直接修改一个现有 `[[profiles]]` 项的字段值，包括 `name`
+
+- `claude-proxy config del`
+  删除一个非当前活动的 `[[profiles]]` 项
+
+- `claude-proxy config claude`
+  更新 `server_port`、`claude_dir`，并更新当前活动 profile 的模型映射字段
 
 ## Claude 与 Codex 的实际改动
 
 ### Claude
 
-执行配置命令后，会修改 `~/.claude/settings.json` 中的受管部分：
+执行 `claude-proxy config claude` 后，会修改 `~/.claude/settings.json` 中的受管部分：
 
 - `ANTHROPIC_BASE_URL=http://localhost:<server_port>`
 - `ANTHROPIC_API_KEY=arbitrary value`
@@ -228,13 +232,13 @@ claude-proxy clean --config /path/to/config.toml
 
 ### Codex
 
-执行配置命令后，会修改：
+执行 `claude-proxy config use` 后，会修改：
 
 - `~/.codex/config.toml`
-  将目标 provider 的 `base_url` 改为配置文件中的 `base_url`
+  将顶层 `model_provider` / `name` 切换到当前活动 profile，并把 `[model_providers.<model_provider>]` 重写到当前活动 profile 的 provider key，同时更新该 provider 的 `name` 与 `base_url`
 
 - `~/.codex/auth.json`
-  将 `OPENAI_API_KEY` 改为配置文件中的 `api_key`
+  将 `OPENAI_API_KEY` 改为当前活动 profile 的 `api_key`
 
 ## 兼容性说明
 
@@ -273,7 +277,9 @@ base_url = "https://newapis.xyz/v1"
 ### 首次接入
 
 ```bash
-claude-proxy config
+claude-proxy config add
+claude-proxy config use
+claude-proxy config claude
 claude-proxy config get
 claude-proxy start
 ```
@@ -284,10 +290,10 @@ claude-proxy start
 claude-proxy config claude
 ```
 
-### 只重配 OpenAI/Codex
+### 切换当前 OpenAI/Codex 配置
 
 ```bash
-claude-proxy config openai
+claude-proxy config use
 ```
 
 ### 全量还原
@@ -319,9 +325,9 @@ claude-proxy clean openai
 也就是说，正确写法是：
 
 ```bash
-claude-proxy config
+claude-proxy config add
+claude-proxy config use
 claude-proxy config claude
-claude-proxy config openai
 ```
 
 不是：
@@ -342,8 +348,11 @@ npm test
 
 ```bash
 npm run config
+npm run config:add
+npm run config:use
+npm run config:alt
+npm run config:del
 npm run config:claude
-npm run config:openai
 npm run config:get
 npm run clean
 npm run clean:claude

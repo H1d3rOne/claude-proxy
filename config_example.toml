@@ -1,11 +1,26 @@
 server_host = "127.0.0.1"
 server_port = 8082
-base_url = ""
-api_key = ""
+home_dir = "~"
+claude_dir = "~/.claude"
+codex_dir = "~/.codex"
+active_profile = "work"
+
+[[profiles]]
+name = "Work Provider"
+model_provider = "work"
+base_url = "https://api.work.example/v1"
+api_key = "sk-work"
 big_model = "gpt-5.4"
 middle_model = "gpt-5.3-codex"
 small_model = "gpt-5.2-codex"
 default_claude_model = "opus[1m]"
-home_dir = "~"
-claude_dir = "~/.claude"
-codex_dir = "~/.codex"
+
+[[profiles]]
+name = "Personal Provider"
+model_provider = "personal"
+base_url = "https://api.personal.example/v1"
+api_key = "sk-personal"
+big_model = "gpt-5.4"
+middle_model = "gpt-5.3-codex"
+small_model = "gpt-5.2-codex"
+default_claude_model = "opus[1m]"

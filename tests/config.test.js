@@ -5,17 +5,22 @@ const os = require("node:os");
 const path = require("node:path");
 
 const {
+  addProfile,
   clearConfigSection,
   collectConfigPrompts,
+  deleteProfile,
   getDefaultConfigDir,
   getDefaultConfigDisplayPath,
   getDefaultConfigPath,
   loadConfig,
   readConfigDocument,
+  setActiveProfile,
+  updateClaudeConfig,
+  updateProfile,
   writeConfigDocument
 } = require("../src/config");
 
-test("loadConfig normalizes a flat local config document", async () => {
+test("loadConfig normalizes a profile-based config document using the active profile", async () => {
   const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), "claude-proxy-config-load-"));
   const configPath = path.join(rootDir, "config.toml");
 
@@ -24,13 +29,27 @@ test("loadConfig normalizes a flat local config document", async () => {
     [
       'server_host = "127.0.0.1"',
       "server_port = 8082",
-      'base_url = "https://local.example/v1"',
-      'api_key = "sk-local"',
+      'active_profile = "work"',
+      "",
+      "[[profiles]]",
+      'name = "Work Provider"',
+      'model_provider = "work"',
+      'base_url = "https://work.example/v1"',
+      'api_key = "sk-work"',
       'big_model = "gpt-5.4"',
       'middle_model = "gpt-5.3-codex"',
       'small_model = "gpt-5.2-codex"',
       'default_claude_model = "opus[1m]"',
-      'codex_provider = "custom"',
+      "",
+      "[[profiles]]",
+      'name = "Personal Provider"',
+      'model_provider = "personal"',
+      'base_url = "https://personal.example/v1"',
+      'api_key = "sk-personal"',
+      'big_model = "gpt-4.1"',
+      'middle_model = "gpt-4.1-mini"',
+      'small_model = "gpt-4.1-nano"',
+      'default_claude_model = "sonnet"',
       ""
     ].join("\n")
   );
@@ -43,10 +62,89 @@ test("loadConfig normalizes a flat local config document", async () => {
   assert.equal(config.project_root, rootDir);
   assert.match(config.claude_dir, /\.claude$/);
   assert.match(config.codex_dir, /\.codex$/);
-  assert.equal(config.base_url, "https://local.example/v1");
-  assert.equal(config.api_key, "sk-local");
+  assert.equal(config.active_profile, "work");
+  assert.equal(config.model_provider, "work");
+  assert.equal(config.profile_name, "Work Provider");
+  assert.equal(config.base_url, "https://work.example/v1");
+  assert.equal(config.api_key, "sk-work");
+  assert.equal(config.big_model, "gpt-5.4");
+  assert.equal(config.default_claude_model, "opus[1m]");
   assert.equal(config.client_api_key, "arbitrary value");
-  assert.equal(config.codex_provider, "custom");
+  assert.equal(config.profiles.length, 2);
+  assert.deepEqual(
+    config.profiles.map((profile) => profile.model_provider),
+    ["work", "personal"]
+  );
+  assert.deepEqual(
+    config.profiles.map((profile) => profile.name),
+    ["Work Provider", "Personal Provider"]
+  );
+
+  await fs.rm(rootDir, { recursive: true, force: true });
+});
+
+test("loadConfig defaults a missing profile name to model_provider", async () => {
+  const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), "claude-proxy-config-profile-name-"));
+  const configPath = path.join(rootDir, "config.toml");
+
+  await fs.writeFile(
+    configPath,
+    [
+      'server_host = "127.0.0.1"',
+      "server_port = 8082",
+      'active_profile = "work"',
+      "",
+      "[[profiles]]",
+      'model_provider = "work"',
+      'base_url = "https://work.example/v1"',
+      'api_key = "sk-work"',
+      'big_model = "gpt-5.4"',
+      'middle_model = "gpt-5.3-codex"',
+      'small_model = "gpt-5.2-codex"',
+      'default_claude_model = "opus[1m]"',
+      ""
+    ].join("\n")
+  );
+
+  const config = await loadConfig(configPath);
+
+  assert.equal(config.profile_name, "work");
+  assert.equal(config.profiles[0].name, "work");
+
+  await fs.rm(rootDir, { recursive: true, force: true });
+});
+
+test("loadConfig treats the legacy flat document as an implicit default profile", async () => {
+  const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), "claude-proxy-config-legacy-flat-"));
+  const configPath = path.join(rootDir, "config.toml");
+
+  await fs.writeFile(
+    configPath,
+    [
+      'server_host = "127.0.0.1"',
+      "server_port = 8082",
+      'base_url = "https://legacy.example/v1"',
+      'api_key = "sk-legacy"',
+      'big_model = "gpt-5.4"',
+      'middle_model = "gpt-5.3-codex"',
+      'small_model = "gpt-5.2-codex"',
+      'default_claude_model = "opus[1m]"',
+      ""
+    ].join("\n")
+  );
+
+  const config = await loadConfig(configPath);
+
+  assert.equal(config.active_profile, "default");
+  assert.equal(config.base_url, "https://legacy.example/v1");
+  assert.equal(config.api_key, "sk-legacy");
+  assert.equal(config.profiles.length, 1);
+  assert.equal(config.model_provider, "default");
+  assert.equal(config.profile_name, "default");
+  assert.equal(config.profiles[0].model_provider, "default");
+  assert.equal(config.profiles[0].name, "default");
+  assert.equal(config.profiles[0].base_url, "https://legacy.example/v1");
+  assert.equal(config.profiles[0].api_key, "sk-legacy");
 
   await fs.rm(rootDir, { recursive: true, force: true });
 });
@@ -63,8 +161,7 @@ test("collectConfigPrompts returns all interactive fields in stable order", () =
     default_claude_model: "opus[1m]",
     home_dir: "~",
     claude_dir: "~/.claude",
-    codex_dir: "~/.codex",
-    codex_provider: ""
+    codex_dir: "~/.codex"
   });
 
   assert.deepEqual(
@@ -80,8 +177,7 @@ test("collectConfigPrompts returns all interactive fields in stable order", () =
       "default_claude_model",
       "home_dir",
       "claude_dir",
-      "codex_dir",
-      "codex_provider"
+      "codex_dir"
     ]
   );
 
@@ -101,7 +197,7 @@ test("getDefaultConfigPath always resolves to ~/.claude-proxy/config.toml", () =
   assert.equal(getDefaultConfigDisplayPath(), "<home>/.claude-proxy/config.toml");
 });
 
-test("readConfigDocument can synthesize a starter flat config when the target file is missing", async () => {
+test("readConfigDocument can synthesize a starter profile-based config when the target file is missing", async () => {
   const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), "claude-proxy-config-missing-"));
   const configPath = path.join(rootDir, "missing.toml");
 
@@ -112,12 +208,11 @@ test("readConfigDocument can synthesize a starter flat config when the target fi
   assert.equal(resolvedConfigPath, configPath);
   assert.equal(document.server_host, "127.0.0.1");
   assert.equal(document.server_port, 8082);
-  assert.equal(document.base_url, "");
-  assert.equal(document.api_key, "");
-  assert.equal(document.big_model, "gpt-5.4");
-  assert.equal(document.middle_model, "gpt-5.3-codex");
-  assert.equal(document.small_model, "gpt-5.2-codex");
-  assert.equal(document.default_claude_model, "opus[1m]");
+  assert.equal(document.home_dir, "~");
+  assert.equal(document.claude_dir, "~/.claude");
+  assert.equal(document.codex_dir, "~/.codex");
+  assert.deepEqual(document.profiles, []);
+  assert.equal(document.active_profile, undefined);
 
   await fs.rm(rootDir, { recursive: true, force: true });
 });
@@ -143,7 +238,7 @@ test("readConfigDocument reports a helpful message when the default config is mi
         );
         assert.match(
           error.message,
-          /Run "claude-proxy config" first to create the default config at <home>\/\.claude-proxy\/config\.toml/
+          /Run "claude-proxy config add" first to create the default config at <home>\/\.claude-proxy\/config\.toml/
         );
         assert.match(error.message, /config_example\.toml/);
         return true;
@@ -224,8 +319,7 @@ test("clearConfigSection removes only Claude-owned fields from config.toml", asy
     default_claude_model: "opus[1m]",
     home_dir: "~",
     claude_dir: "~/.claude-custom",
-    codex_dir: "~/.codex-custom",
-    codex_provider: "custom"
+    codex_dir: "~/.codex-custom"
   });
 
   const changed = await clearConfigSection(configPath, "claude");
@@ -241,7 +335,6 @@ test("clearConfigSection removes only Claude-owned fields from config.toml", asy
   assert.equal(document.base_url, "https://local.example/v1");
   assert.equal(document.api_key, "sk-local");
   assert.equal(document.codex_dir, "~/.codex-custom");
-  assert.equal(document.codex_provider, "custom");
 
   await fs.rm(rootDir, { recursive: true, force: true });
 });
@@ -261,8 +354,7 @@ test("clearConfigSection removes only OpenAI-owned fields from config.toml", asy
     default_claude_model: "opus[1m]",
     home_dir: "~",
     claude_dir: "~/.claude-custom",
-    codex_dir: "~/.codex-custom",
-    codex_provider: "custom"
+    codex_dir: "~/.codex-custom"
   });
 
   const changed = await clearConfigSection(configPath, "openai");
@@ -272,12 +364,320 @@ test("clearConfigSection removes only OpenAI-owned fields from config.toml", asy
   assert.equal(document.base_url, undefined);
   assert.equal(document.api_key, undefined);
   assert.equal(document.codex_dir, undefined);
-  assert.equal(document.codex_provider, undefined);
   assert.equal(document.big_model, "gpt-5.4");
   assert.equal(document.middle_model, "gpt-5.3-codex");
   assert.equal(document.small_model, "gpt-5.2-codex");
   assert.equal(document.default_claude_model, "opus[1m]");
   assert.equal(document.claude_dir, "~/.claude-custom");
+
+  await fs.rm(rootDir, { recursive: true, force: true });
+});
+
+test("addProfile migrates a legacy flat config into profiles and keeps the legacy entry active", async () => {
+  const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), "claude-proxy-config-add-profile-"));
+  const configPath = path.join(rootDir, "config.toml");
+
+  await fs.writeFile(
+    configPath,
+    [
+      'server_host = "127.0.0.1"',
+      "server_port = 8082",
+      'base_url = "https://legacy.example/v1"',
+      'api_key = "sk-legacy"',
+      'big_model = "gpt-5.4"',
+      'middle_model = "gpt-5.3-codex"',
+      'small_model = "gpt-5.2-codex"',
+      'default_claude_model = "opus[1m]"',
+      ""
+    ].join("\n")
+  );
+
+  await addProfile(configPath, {
+    name: "Personal Provider",
+    model_provider: "personal",
+    base_url: "https://personal.example/v1",
+    api_key: "sk-personal",
+    big_model: "gpt-4.1",
+    middle_model: "gpt-4.1-mini",
+    small_model: "gpt-4.1-nano",
+    default_claude_model: "sonnet"
+  });
+
+  const { document } = await readConfigDocument(configPath);
+  assert.equal(document.active_profile, "default");
+  assert.equal(document.profiles.length, 2);
+  assert.deepEqual(
+    document.profiles.map((profile) => profile.model_provider),
+    ["default", "personal"]
+  );
+  assert.deepEqual(
+    document.profiles.map((profile) => profile.name),
+    ["default", "Personal Provider"]
+  );
+  assert.equal(document.profiles[0].base_url, "https://legacy.example/v1");
+  assert.equal(document.profiles[1].api_key, "sk-personal");
+  assert.equal(document.base_url, undefined);
+  assert.equal(document.api_key, undefined);
+
+  await fs.rm(rootDir, { recursive: true, force: true });
+});
+
+test("addProfile rejects duplicate model providers", async () => {
+  const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), "claude-proxy-config-add-duplicate-"));
+  const configPath = path.join(rootDir, "config.toml");
+
+  await writeConfigDocument(configPath, {
+    server_host: "127.0.0.1",
+    server_port: 8082,
+    active_profile: "work",
+    profiles: [
+      {
+        name: "Work Provider",
+        model_provider: "work",
+        base_url: "https://work.example/v1",
+        api_key: "sk-work",
+        big_model: "gpt-5.4",
+        middle_model: "gpt-5.3-codex",
+        small_model: "gpt-5.2-codex",
+        default_claude_model: "opus[1m]"
+      }
+    ]
+  });
+
+  await assert.rejects(
+    () =>
+      addProfile(configPath, {
+        name: "Duplicate Provider",
+        model_provider: "work",
+        base_url: "https://duplicate.example/v1",
+        api_key: "sk-duplicate",
+        big_model: "gpt-5.4",
+        middle_model: "gpt-5.3-codex",
+        small_model: "gpt-5.2-codex",
+        default_claude_model: "opus[1m]"
+      }),
+    /Profile already exists: work/
+  );
+
+  await fs.rm(rootDir, { recursive: true, force: true });
+});
+
+test("setActiveProfile updates the selected model provider", async () => {
+  const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), "claude-proxy-config-set-active-"));
+  const configPath = path.join(rootDir, "config.toml");
+
+  await writeConfigDocument(configPath, {
+    server_host: "127.0.0.1",
+    server_port: 8082,
+    active_profile: "work",
+    profiles: [
+      {
+        name: "Work Provider",
+        model_provider: "work",
+        base_url: "https://work.example/v1",
+        api_key: "sk-work",
+        big_model: "gpt-5.4",
+        middle_model: "gpt-5.3-codex",
+        small_model: "gpt-5.2-codex",
+        default_claude_model: "opus[1m]"
+      },
+      {
+        name: "Personal Provider",
+        model_provider: "personal",
+        base_url: "https://personal.example/v1",
+        api_key: "sk-personal",
+        big_model: "gpt-4.1",
+        middle_model: "gpt-4.1-mini",
+        small_model: "gpt-4.1-nano",
+        default_claude_model: "sonnet"
+      }
+    ]
+  });
+
+  await setActiveProfile(configPath, "personal");
+
+  const { document } = await readConfigDocument(configPath);
+  assert.equal(document.active_profile, "personal");
+
+  await fs.rm(rootDir, { recursive: true, force: true });
+});
+
+test("updateProfile updates the selected non-active profile in place", async () => {
+  const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), "claude-proxy-config-update-profile-"));
+  const configPath = path.join(rootDir, "config.toml");
+
+  await writeConfigDocument(configPath, {
+    server_host: "127.0.0.1",
+    server_port: 8082,
+    active_profile: "work",
+    profiles: [
+      {
+        name: "Work Provider",
+        model_provider: "work",
+        base_url: "https://work.example/v1",
+        api_key: "sk-work",
+        big_model: "gpt-5.4",
+        middle_model: "gpt-5.3-codex",
+        small_model: "gpt-5.2-codex",
+        default_claude_model: "opus[1m]"
+      },
+      {
+        name: "Personal Provider",
+        model_provider: "personal",
+        base_url: "https://personal.example/v1",
+        api_key: "sk-personal",
+        big_model: "gpt-4.1",
+        middle_model: "gpt-4.1-mini",
+        small_model: "gpt-4.1-nano",
+        default_claude_model: "sonnet"
+      }
+    ]
+  });
+
+  await updateProfile(configPath, "personal", {
+    name: "Personal Workspace",
+    base_url: "https://edited.example/v1",
+    api_key: "sk-edited",
+    big_model: "gpt-4.1"
+  });
+
+  const { document } = await readConfigDocument(configPath);
+  assert.equal(document.active_profile, "work");
+  assert.equal(document.profiles[1].model_provider, "personal");
+  assert.equal(document.profiles[1].name, "Personal Workspace");
+  assert.equal(document.profiles[1].base_url, "https://edited.example/v1");
+  assert.equal(document.profiles[1].api_key, "sk-edited");
+
+  await fs.rm(rootDir, { recursive: true, force: true });
+});
+
+test("deleteProfile removes a non-active profile", async () => {
+  const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), "claude-proxy-config-delete-profile-"));
+  const configPath = path.join(rootDir, "config.toml");
+
+  await writeConfigDocument(configPath, {
+    server_host: "127.0.0.1",
+    server_port: 8082,
+    active_profile: "work",
+    profiles: [
+      {
+        name: "Work Provider",
+        model_provider: "work",
+        base_url: "https://work.example/v1",
+        api_key: "sk-work",
+        big_model: "gpt-5.4",
+        middle_model: "gpt-5.3-codex",
+        small_model: "gpt-5.2-codex",
+        default_claude_model: "opus[1m]"
+      },
+      {
+        name: "Personal Provider",
+        model_provider: "personal",
+        base_url: "https://personal.example/v1",
+        api_key: "sk-personal",
+        big_model: "gpt-4.1",
+        middle_model: "gpt-4.1-mini",
+        small_model: "gpt-4.1-nano",
+        default_claude_model: "sonnet"
+      }
+    ]
+  });
+
+  await deleteProfile(configPath, "personal");
+
+  const { document } = await readConfigDocument(configPath);
+  assert.equal(document.active_profile, "work");
+  assert.deepEqual(
+    document.profiles.map((profile) => profile.model_provider),
+    ["work"]
+  );
+
+  await fs.rm(rootDir, { recursive: true, force: true });
+});
+
+test("deleteProfile rejects deleting the active profile", async () => {
+  const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), "claude-proxy-config-delete-active-"));
+  const configPath = path.join(rootDir, "config.toml");
+
+  await writeConfigDocument(configPath, {
+    server_host: "127.0.0.1",
+    server_port: 8082,
+    active_profile: "work",
+    profiles: [
+      {
+        name: "Work Provider",
+        model_provider: "work",
+        base_url: "https://work.example/v1",
+        api_key: "sk-work",
+        big_model: "gpt-5.4",
+        middle_model: "gpt-5.3-codex",
+        small_model: "gpt-5.2-codex",
+        default_claude_model: "opus[1m]"
+      }
+    ]
+  });
+
+  await assert.rejects(() => deleteProfile(configPath, "work"), /Cannot delete the active profile: work/);
+
+  await fs.rm(rootDir, { recursive: true, force: true });
+});
+
+test("updateClaudeConfig updates global Claude settings and the active profile model mappings", async () => {
+  const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), "claude-proxy-config-update-claude-"));
+  const configPath = path.join(rootDir, "config.toml");
+
+  await writeConfigDocument(configPath, {
+    server_host: "127.0.0.1",
+    server_port: 8082,
+    claude_dir: "~/.claude",
+    active_profile: "work",
+    profiles: [
+      {
+        name: "Work Provider",
+        model_provider: "work",
+        base_url: "https://work.example/v1",
+        api_key: "sk-work",
+        big_model: "gpt-5.4",
+        middle_model: "gpt-5.3-codex",
+        small_model: "gpt-5.2-codex",
+        default_claude_model: "opus[1m]"
+      },
+      {
+        name: "Personal Provider",
+        model_provider: "personal",
+        base_url: "https://personal.example/v1",
+        api_key: "sk-personal",
+        big_model: "gpt-4.1",
+        middle_model: "gpt-4.1-mini",
+        small_model: "gpt-4.1-nano",
+        default_claude_model: "sonnet"
+      }
+    ]
+  });
+
+  await updateClaudeConfig(configPath, {
+    server_port: 9090,
+    claude_dir: "~/.claude-custom",
+    big_model: "claude-big",
+    middle_model: "claude-middle",
+    small_model: "claude-small",
+    default_claude_model: "sonnet"
+  });
+
+  const { document } = await readConfigDocument(configPath);
+  assert.equal(document.server_port, 9090);
+  assert.equal(document.claude_dir, "~/.claude-custom");
+  assert.equal(document.profiles[0].model_provider, "work");
+  assert.equal(document.profiles[0].name, "Work Provider");
+  assert.equal(document.profiles[0].big_model, "claude-big");
+  assert.equal(document.profiles[0].middle_model, "claude-middle");
+  assert.equal(document.profiles[0].small_model, "claude-small");
+  assert.equal(document.profiles[0].default_claude_model, "sonnet");
+  assert.equal(document.profiles[1].model_provider, "personal");
+  assert.equal(document.profiles[1].name, "Personal Provider");
+  assert.equal(document.profiles[1].big_model, "gpt-4.1");
+  assert.equal(document.big_model, undefined);
+  assert.equal(document.middle_model, undefined);
 
   await fs.rm(rootDir, { recursive: true, force: true });
 });

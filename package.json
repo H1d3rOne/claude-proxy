@@ -1,6 +1,6 @@
 {
   "name": "@h1d3rone/claude-proxy",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Node.js rewrite of claude-code-proxy with local Claude and Codex configuration management",
   "bin": {
     "claude-proxy": "src/cli.js"
@@ -18,8 +18,11 @@
     "start": "node ./src/cli.js start",
     "stop": "node ./src/cli.js stop",
     "config": "node ./src/cli.js config",
+    "config:add": "node ./src/cli.js config add",
+    "config:use": "node ./src/cli.js config use",
+    "config:alt": "node ./src/cli.js config alt",
+    "config:del": "node ./src/cli.js config del",
     "config:claude": "node ./src/cli.js config claude",
-    "config:openai": "node ./src/cli.js config openai",
     "config:get": "node ./src/cli.js config get",
     "clean": "node ./src/cli.js clean",
     "clean:claude": "node ./src/cli.js clean claude",
