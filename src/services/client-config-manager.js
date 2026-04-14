@@ -100,16 +100,47 @@ function getCodexProviderName(document, preferredProvider) {
 
 function patchCodexConfigDocument(document, host, config = {}) {
   const patched = { ...document };
-  const providerName = getCodexProviderName(
-    patched,
-    host.codex_provider || config.codex_provider || null
-  );
+  const providerName = host.model_provider || config.model_provider || null;
+  const providerDisplayName =
+    (host.model_provider
+      ? host.profile_name || config.profile_name
+      : config.profile_name || host.profile_name) ||
+    providerName ||
+    null;
   const baseUrl = host.base_url || config.base_url;
 
   if (providerName) {
+    const existingProviderName = getCodexProviderName(patched, null);
+    const currentProviders =
+      patched.model_providers && typeof patched.model_providers === "object"
+        ? { ...patched.model_providers }
+        : {};
+    const selectedProviderConfig = currentProviders[providerName];
+    const previousProviderConfig =
+      existingProviderName && existingProviderName !== providerName
+        ? currentProviders[existingProviderName]
+        : null;
+
+    patched.model_provider = providerName;
+    patched.name = providerDisplayName;
+    if (existingProviderName && existingProviderName !== providerName) {
+      delete currentProviders[existingProviderName];
+    }
+    currentProviders[providerName] = {
+      ...(selectedProviderConfig || previousProviderConfig || {}),
+      name: providerDisplayName,
+      base_url: baseUrl
+    };
+    patched.model_providers = currentProviders;
+    return patched;
+  }
+
+  const existingProviderName = getCodexProviderName(patched, null);
+  if (existingProviderName) {
     patched.model_providers = patched.model_providers || {};
-    patched.model_providers[providerName] = {
-      ...(patched.model_providers[providerName] || {}),
+    patched.model_providers[existingProviderName] = {
+      ...(patched.model_providers[existingProviderName] || {}),
+      ...(providerDisplayName ? { name: providerDisplayName } : {}),
       base_url: baseUrl
     };
     return patched;

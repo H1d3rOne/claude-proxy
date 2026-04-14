@@ -15,7 +15,7 @@ Quick install with `npm`:
 
 ```bash
 npm install -g @h1d3rone/claude-proxy
-claude-proxy config
+claude-proxy config add
 ```
 
 Note: the published package is scoped, but the command name is still `claude-proxy`.
@@ -27,15 +27,17 @@ git clone https://github.com/H1d3rOne/claude-proxy.git
 cd claude-proxy
 npm install
 npm link
-claude-proxy config
+claude-proxy config add
 ```
 
 ## Usage
 
 ```bash
-claude-proxy config
+claude-proxy config add
+claude-proxy config use
+claude-proxy config alt
+claude-proxy config del
 claude-proxy config claude
-claude-proxy config openai
 claude-proxy config get
 
 claude-proxy start
@@ -47,9 +49,11 @@ claude-proxy clean openai
 claude-proxy update
 ```
 
-- `config`: interactively write and apply local configuration
+- `config add`: add a named upstream profile
+- `config use`: choose the active profile and sync `model_provider` / `name` / provider section key / `base_url` / `api_key` to Codex
+- `config alt`: edit a saved upstream profile in place, including the profile `name`, without switching the active profile
+- `config del`: delete a non-active upstream profile
 - `config claude`: configure only Claude-related settings
-- `config openai`: configure only OpenAI/Codex-related settings
 - `config get`: show current config-file, Claude, and Codex state
 - `start`: start the local proxy server
 - `stop`: stop the local proxy server
