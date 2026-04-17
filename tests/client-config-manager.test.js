@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
+const toml = require("@iarna/toml");
 
 const {
   applyClaudeManagedHostConfig,
@@ -121,11 +122,13 @@ test("applyManagedHostConfig patches Claude and Codex files and split clean comm
 
   const patchedCodexConfig = await fs.readFile(host.codex_config_path, "utf8");
   assert.match(patchedCodexConfig, /model_provider = "personal"/);
-  assert.match(patchedCodexConfig, /name = "Personal Workspace"/);
+  assert.match(patchedCodexConfig, /model = "opus\[1m\]"/);
   assert.match(patchedCodexConfig, /\[model_providers\.personal\]/);
-  assert.match(patchedCodexConfig, /\[model_providers\.personal\][\s\S]*name = "Personal Workspace"/);
   assert.match(patchedCodexConfig, /base_url = "https:\/\/host-specific\.example\/v1"/);
   assert.doesNotMatch(patchedCodexConfig, /\[model_providers\.custom\]/);
+  const patchedCodexDocument = toml.parse(patchedCodexConfig);
+  assert.equal(patchedCodexDocument.name, undefined);
+  assert.equal(patchedCodexDocument.model_providers.personal.name, "Personal Workspace");
 
   const patchedAuth = JSON.parse(await fs.readFile(host.codex_auth_path, "utf8"));
   assert.equal(patchedAuth.OPENAI_API_KEY, "host-openai-key");
@@ -166,6 +169,8 @@ test("applyManagedHostConfig patches Claude and Codex files and split clean comm
       `completed:Update Codex config (${host.codex_config_path})`,
       `started:Update Codex auth (${host.codex_auth_path})`,
       `completed:Update Codex auth (${host.codex_auth_path})`,
+      `started:Sync config projects (${config.__configPath})`,
+      `completed:Sync config projects (${config.__configPath})`,
       `started:Update Claude settings (${host.settings_path})`,
       `completed:Update Claude settings (${host.settings_path})`,
       `started:Write managed state (${host.managed_state_file})`,
@@ -231,6 +236,7 @@ test("partial config apply updates only the requested section and managed state"
     base_url: "https://new-upstream.example/v1",
     model_provider: "workspace",
     profile_name: "Workspace Provider",
+    default_claude_model: "sonnet",
     __configPath: path.join(rootDir, "config.toml")
   };
   host.big_model = undefined;
@@ -292,15 +298,90 @@ test("partial config apply updates only the requested section and managed state"
 
   const codexConfigAfterOpenAIApply = await fs.readFile(host.codex_config_path, "utf8");
   assert.match(codexConfigAfterOpenAIApply, /model_provider = "workspace"/);
-  assert.match(codexConfigAfterOpenAIApply, /name = "Workspace Provider"/);
+  assert.match(codexConfigAfterOpenAIApply, /model = "sonnet"/);
   assert.match(codexConfigAfterOpenAIApply, /\[model_providers\.workspace\]/);
-  assert.match(codexConfigAfterOpenAIApply, /\[model_providers\.workspace\][\s\S]*name = "Workspace Provider"/);
   assert.match(codexConfigAfterOpenAIApply, /base_url = "https:\/\/new-upstream\.example\/v1"/);
+  const codexConfigAfterOpenAIApplyDocument = toml.parse(codexConfigAfterOpenAIApply);
+  assert.equal(codexConfigAfterOpenAIApplyDocument.name, undefined);
+  assert.equal(
+    codexConfigAfterOpenAIApplyDocument.model_providers.workspace.name,
+    "Workspace Provider"
+  );
   const codexAuthAfterOpenAIApply = JSON.parse(await fs.readFile(host.codex_auth_path, "utf8"));
   assert.equal(codexAuthAfterOpenAIApply.OPENAI_API_KEY, "new-openai-key");
 
   state = JSON.parse(await fs.readFile(host.managed_state_file, "utf8"));
   assert.deepEqual(Object.keys(state.files).sort(), ["claude_settings", "codex_auth", "codex_config"]);
+
+  await fs.rm(rootDir, { recursive: true, force: true });
+});
+
+test("applyOpenAIManagedHostConfig merges missing codex [projects] entries into the active config file", async () => {
+  const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), "claude-proxy-projects-sync-"));
+  const host = createHostFixture(rootDir);
+  const configPath = path.join(rootDir, "claude-proxy-config.toml");
+  const config = {
+    api_key: "new-openai-key",
+    base_url: "https://new-upstream.example/v1",
+    model_provider: "workspace",
+    profile_name: "Workspace Provider",
+    default_claude_model: "sonnet",
+    __configPath: configPath
+  };
+
+  await fs.mkdir(host.codex_dir, { recursive: true });
+  await fs.writeFile(
+    configPath,
+    [
+      'server_host = "127.0.0.1"',
+      "server_port = 8082",
+      "",
+      '[projects."/existing/project"]',
+      'trust_level = "trusted"',
+      "",
+      '[projects."/shared/project"]',
+      'trust_level = "untrusted"',
+      ""
+    ].join("\n")
+  );
+  await fs.writeFile(
+    host.codex_config_path,
+    [
+      'model_provider = "custom"',
+      "",
+      "[model_providers.custom]",
+      'name = "custom"',
+      'base_url = "https://old.example/v1"',
+      "",
+      '[projects."/shared/project"]',
+      'trust_level = "trusted"',
+      "",
+      '[projects."/missing/project"]',
+      'trust_level = "trusted"',
+      'extra = "keep-me"',
+      ""
+    ].join("\n")
+  );
+  await fs.writeFile(
+    host.codex_auth_path,
+    JSON.stringify(
+      {
+        OPENAI_API_KEY: "old-openai-key"
+      },
+      null,
+      2
+    )
+  );
+
+  await applyOpenAIManagedHostConfig(config, host);
+
+  const patchedConfig = toml.parse(await fs.readFile(configPath, "utf8"));
+  assert.equal(patchedConfig.projects["/existing/project"].trust_level, "trusted");
+  assert.equal(patchedConfig.projects["/shared/project"].trust_level, "untrusted");
+  assert.deepEqual(patchedConfig.projects["/missing/project"], {
+    trust_level: "trusted",
+    extra: "keep-me"
+  });
 
   await fs.rm(rootDir, { recursive: true, force: true });
 });

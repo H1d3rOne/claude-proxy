@@ -97,17 +97,18 @@ function normalizeProfileDocument(profile, fallbackName) {
   const modelProvider =
     profile?.model_provider != null && String(profile.model_provider).trim()
       ? String(profile.model_provider).trim()
-      : profile?.name != null && String(profile.name).trim()
-        ? String(profile.name).trim()
+      : "OpenAI";
+  const profileName =
+    profile?.name != null && String(profile.name).trim()
+      ? String(profile.name).trim()
+      : profile?.model_provider != null && String(profile.model_provider).trim()
+        ? String(profile.model_provider).trim()
         : fallbackName;
 
   return createDefaultProfile(
     modelProvider,
     {
-      name:
-        profile?.name != null && String(profile.name).trim()
-          ? String(profile.name).trim()
-          : modelProvider,
+      name: profileName || modelProvider,
       base_url: profile?.base_url || "",
       api_key: profile?.api_key || "",
       big_model: profile?.big_model || DEFAULT_BIG_MODEL,
@@ -142,10 +143,21 @@ function getProfilesState(document = {}) {
         normalizeProfileDocument(profile, `profile-${index + 1}`)
       )
     : [];
+  const requestedActiveProfile =
+    document.active_profile != null && String(document.active_profile).trim()
+      ? String(document.active_profile).trim()
+      : null;
+  const matchedActiveProfile = requestedActiveProfile
+    ? profiles.find(
+        (profile) =>
+          profile.name === requestedActiveProfile ||
+          profile.model_provider === requestedActiveProfile
+      ) || null
+    : null;
 
   return {
     documentVersion: "profiles",
-    activeProfileName: document.active_profile || profiles[0]?.model_provider || null,
+    activeProfileName: matchedActiveProfile?.name || requestedActiveProfile || profiles[0]?.name || null,
     profiles
   };
 }
@@ -346,8 +358,7 @@ function normalizeConfigDocument(document, resolvedConfigPath, options = {}) {
   const claudeDir = normalizeLocalPath(document.claude_dir || path.join(homeDir, ".claude"), configDir);
   const codexDir = normalizeLocalPath(document.codex_dir || path.join(homeDir, ".codex"), configDir);
   const { documentVersion, profiles, activeProfileName } = getProfilesState(document);
-  const activeProfile =
-    profiles.find((profile) => profile.model_provider === activeProfileName) || profiles[0] || null;
+  const activeProfile = profiles.find((profile) => profile.name === activeProfileName) || profiles[0] || null;
   const localConfig = applyHostRuntimePaths(
     {
       name: "local",
@@ -376,7 +387,7 @@ function normalizeConfigDocument(document, resolvedConfigPath, options = {}) {
   return {
     server_host: document.server_host || "127.0.0.1",
     server_port: Number(document.server_port || 8082),
-    active_profile: activeProfile?.model_provider || null,
+    active_profile: activeProfile?.name || null,
     model_provider: activeProfile?.model_provider || null,
     profile_name: activeProfile?.name || activeProfile?.model_provider || null,
     profiles,
@@ -500,15 +511,19 @@ function isValidPromptValue(target, value) {
 function validateProfileName(name) {
   const normalizedName = String(name || "").trim();
   if (!normalizedName) {
-    throw new Error("Profile model_provider must be non-empty.");
+    throw new Error("Profile name must be non-empty.");
   }
   return normalizedName;
 }
 
 function createValidatedProfile(profile) {
+  const validatedName = validateProfileName(profile?.name);
   const normalizedProfile = normalizeProfileDocument(
-    profile,
-    validateProfileName(profile?.model_provider || profile?.name)
+    {
+      ...profile,
+      name: validatedName
+    },
+    validatedName
   );
 
   if (isPlaceholderValue(normalizedProfile.base_url) || isPlaceholderValue(normalizedProfile.api_key)) {
@@ -537,12 +552,12 @@ async function addProfile(configPath, profile, options = {}) {
   );
   const nextProfile = createValidatedProfile(profile);
 
-  if (profiles.some((entry) => entry.model_provider === nextProfile.model_provider)) {
-    throw new Error(`Profile already exists: ${nextProfile.model_provider}`);
+  if (profiles.some((entry) => entry.name === nextProfile.name)) {
+    throw new Error(`Profile already exists: ${nextProfile.name}`);
   }
 
   const nextProfiles = [...profiles, nextProfile];
-  const nextActiveProfileName = activeProfileName || nextProfile.model_provider;
+  const nextActiveProfileName = activeProfileName || nextProfile.name;
   const nextDocument = toPersistentProfilesDocument(document, nextProfiles, nextActiveProfileName);
 
   await writeConfigDocument(resolvedConfigPath, nextDocument);
@@ -557,7 +572,7 @@ async function setActiveProfile(configPath, profileName, options = {}) {
     allowMissing: true
   });
 
-  if (!profiles.some((entry) => entry.model_provider === normalizedName)) {
+  if (!profiles.some((entry) => entry.name === normalizedName)) {
     throw new Error(`Profile not found: ${normalizedName}`);
   }
 
@@ -579,23 +594,26 @@ async function updateProfile(configPath, profileName, updates = {}, options = {}
     allowMissing: true
   });
 
-  if (!profiles.some((entry) => entry.model_provider === normalizedName)) {
+  const existingProfile = profiles.find((entry) => entry.name === normalizedName) || null;
+  if (!existingProfile) {
     throw new Error(`Profile not found: ${normalizedName}`);
   }
 
-  const nextProfiles = profiles.map((profile) => {
-    if (profile.model_provider !== normalizedName) {
-      return profile;
-    }
-
-    return createValidatedProfile({
-      ...profile,
-      ...updates,
-      model_provider: profile.model_provider
-    });
+  const updatedProfile = createValidatedProfile({
+    ...existingProfile,
+    ...updates,
+    model_provider: existingProfile.model_provider
   });
+  if (profiles.some((entry) => entry.name === updatedProfile.name && entry.name !== normalizedName)) {
+    throw new Error(`Profile already exists: ${updatedProfile.name}`);
+  }
 
-  const nextDocument = toPersistentProfilesDocument(document, nextProfiles, activeProfileName);
+  const nextProfiles = profiles.map((profile) =>
+    profile.name === normalizedName ? updatedProfile : profile
+  );
+  const nextActiveProfileName =
+    activeProfileName === normalizedName ? updatedProfile.name : activeProfileName;
+  const nextDocument = toPersistentProfilesDocument(document, nextProfiles, nextActiveProfileName);
   await writeConfigDocument(resolvedConfigPath, nextDocument);
   return normalizeConfigDocument(nextDocument, resolvedConfigPath, {
     runtimeProjectRoot: options.runtimeProjectRoot
@@ -613,7 +631,7 @@ async function deleteProfile(configPath, profileName, options = {}) {
     allowMissing: true
   });
 
-  if (!profiles.some((entry) => entry.model_provider === normalizedName)) {
+  if (!profiles.some((entry) => entry.name === normalizedName)) {
     throw new Error(`Profile not found: ${normalizedName}`);
   }
 
@@ -621,7 +639,7 @@ async function deleteProfile(configPath, profileName, options = {}) {
     throw new Error(`Cannot delete the active profile: ${normalizedName}`);
   }
 
-  const nextProfiles = profiles.filter((entry) => entry.model_provider !== normalizedName);
+  const nextProfiles = profiles.filter((entry) => entry.name !== normalizedName);
   const nextDocument = toPersistentProfilesDocument(document, nextProfiles, activeProfileName);
   await writeConfigDocument(resolvedConfigPath, nextDocument);
   return normalizeConfigDocument(nextDocument, resolvedConfigPath, {
@@ -644,7 +662,7 @@ async function updateClaudeConfig(configPath, updates = {}, options = {}) {
   }
 
   const nextProfiles = profiles.map((profile) => {
-    if (profile.model_provider !== activeProfileName) {
+    if (profile.name !== activeProfileName) {
       return profile;
     }
 

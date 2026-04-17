@@ -50,7 +50,7 @@ claude-proxy update
 ```
 
 - `config add`：新增一组命名上游配置
-- `config use`：从已有配置中选择当前配置，并同步 `model_provider` / `name` / provider 节点 / `base_url` / `api_key` 到 Codex
+- `config use`：从已有配置中选择当前配置，并同步 `model_provider` / `model` / provider 节点中的 `name` / `base_url` / `OPENAI_API_KEY` 到 Codex
 - `config alt`：直接修改某个已保存的上游配置，包括 profile 的 `name`，不切换当前活动配置
 - `config del`：删除一个非当前激活的配置
 - `config claude`：只配置 Claude 相关部分

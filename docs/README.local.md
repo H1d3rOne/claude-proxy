@@ -82,7 +82,7 @@ claude-proxy config get
   新增一个命名上游配置，只写入 `config.toml`，不立即改动 Claude 或 Codex。
 
 - `claude-proxy config use`
-  从已有配置中选择当前活动配置，并同步该配置的 `model_provider` / `name` / provider 节点 / `base_url` / `api_key` 到 Codex。
+  从已有配置中选择当前活动配置，并同步该配置的 `model_provider` / 顶层 `model` / provider 节点中的 `name` / `base_url` / `OPENAI_API_KEY` 到 Codex。
 
 - `claude-proxy config alt`
   直接修改某个已保存的 profile，包括 `name` 字段，不切换当前活动配置，也不直接改动 Claude 或 Codex。
@@ -207,7 +207,7 @@ claude-proxy clean --config /path/to/config.toml
   新增一个 `[[profiles]]` 项
 
 - `claude-proxy config use`
-  切换 `active_profile`，然后把所选 profile 的 `model_provider` / `name` / provider 节点 / `base_url` / `api_key` 写入 Codex
+  切换 `active_profile`，然后把所选 profile 的 `model_provider` / `default_claude_model` / provider 节点中的 `name` / `base_url` / `api_key` 写入 Codex
 
 - `claude-proxy config alt`
   直接修改一个现有 `[[profiles]]` 项的字段值，包括 `name`
@@ -235,7 +235,7 @@ claude-proxy clean --config /path/to/config.toml
 执行 `claude-proxy config use` 后，会修改：
 
 - `~/.codex/config.toml`
-  将顶层 `model_provider` / `name` 切换到当前活动 profile，并把 `[model_providers.<model_provider>]` 重写到当前活动 profile 的 provider key，同时更新该 provider 的 `name` 与 `base_url`
+  将顶层 `model_provider` 切换到当前活动 profile，把顶层 `model` 改为当前活动 profile 的 `default_claude_model`，并把 `[model_providers.<model_provider>]` 重写到当前活动 profile 的 provider key，同时只更新该 provider 的 `name` 与 `base_url`
 
 - `~/.codex/auth.json`
   将 `OPENAI_API_KEY` 改为当前活动 profile 的 `api_key`

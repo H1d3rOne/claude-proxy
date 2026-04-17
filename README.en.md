@@ -50,7 +50,7 @@ claude-proxy update
 ```
 
 - `config add`: add a named upstream profile
-- `config use`: choose the active profile and sync `model_provider` / `name` / provider section key / `base_url` / `api_key` to Codex
+- `config use`: choose the active profile and sync `model_provider` / top-level `model` / provider-level `name` / `base_url` / `OPENAI_API_KEY` to Codex
 - `config alt`: edit a saved upstream profile in place, including the profile `name`, without switching the active profile
 - `config del`: delete a non-active upstream profile
 - `config claude`: configure only Claude-related settings

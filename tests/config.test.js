@@ -29,7 +29,7 @@ test("loadConfig normalizes a profile-based config document using the active pro
     [
       'server_host = "127.0.0.1"',
       "server_port = 8082",
-      'active_profile = "work"',
+      'active_profile = "Work Provider"',
       "",
       "[[profiles]]",
       'name = "Work Provider"',
@@ -62,7 +62,7 @@ test("loadConfig normalizes a profile-based config document using the active pro
   assert.equal(config.project_root, rootDir);
   assert.match(config.claude_dir, /\.claude$/);
   assert.match(config.codex_dir, /\.codex$/);
-  assert.equal(config.active_profile, "work");
+  assert.equal(config.active_profile, "Work Provider");
   assert.equal(config.model_provider, "work");
   assert.equal(config.profile_name, "Work Provider");
   assert.equal(config.base_url, "https://work.example/v1");
@@ -422,14 +422,14 @@ test("addProfile migrates a legacy flat config into profiles and keeps the legac
   await fs.rm(rootDir, { recursive: true, force: true });
 });
 
-test("addProfile rejects duplicate model providers", async () => {
+test("addProfile rejects duplicate profile names", async () => {
   const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), "claude-proxy-config-add-duplicate-"));
   const configPath = path.join(rootDir, "config.toml");
 
   await writeConfigDocument(configPath, {
     server_host: "127.0.0.1",
     server_port: 8082,
-    active_profile: "work",
+    active_profile: "Work Provider",
     profiles: [
       {
         name: "Work Provider",
@@ -447,7 +447,7 @@ test("addProfile rejects duplicate model providers", async () => {
   await assert.rejects(
     () =>
       addProfile(configPath, {
-        name: "Duplicate Provider",
+        name: "Work Provider",
         model_provider: "work",
         base_url: "https://duplicate.example/v1",
         api_key: "sk-duplicate",
@@ -456,7 +456,54 @@ test("addProfile rejects duplicate model providers", async () => {
         small_model: "gpt-5.2-codex",
         default_claude_model: "opus[1m]"
       }),
-    /Profile already exists: work/
+    /Profile already exists: Work Provider/
+  );
+
+  await fs.rm(rootDir, { recursive: true, force: true });
+});
+
+test("addProfile allows repeated model_provider values when names differ", async () => {
+  const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), "claude-proxy-config-add-duplicate-provider-"));
+  const configPath = path.join(rootDir, "config.toml");
+
+  await writeConfigDocument(configPath, {
+    server_host: "127.0.0.1",
+    server_port: 8082,
+    active_profile: "Work Provider",
+    profiles: [
+      {
+        name: "Work Provider",
+        model_provider: "OpenAI",
+        base_url: "https://work.example/v1",
+        api_key: "sk-work",
+        big_model: "gpt-5.4",
+        middle_model: "gpt-5.3-codex",
+        small_model: "gpt-5.2-codex",
+        default_claude_model: "opus[1m]"
+      }
+    ]
+  });
+
+  await addProfile(configPath, {
+    name: "Personal Provider",
+    model_provider: "OpenAI",
+    base_url: "https://personal.example/v1",
+    api_key: "sk-personal",
+    big_model: "gpt-4.1",
+    middle_model: "gpt-4.1-mini",
+    small_model: "gpt-4.1-nano",
+    default_claude_model: "sonnet"
+  });
+
+  const { document } = await readConfigDocument(configPath);
+  assert.equal(document.active_profile, "Work Provider");
+  assert.deepEqual(
+    document.profiles.map((profile) => profile.name),
+    ["Work Provider", "Personal Provider"]
+  );
+  assert.deepEqual(
+    document.profiles.map((profile) => profile.model_provider),
+    ["OpenAI", "OpenAI"]
   );
 
   await fs.rm(rootDir, { recursive: true, force: true });
@@ -469,7 +516,7 @@ test("setActiveProfile updates the selected model provider", async () => {
   await writeConfigDocument(configPath, {
     server_host: "127.0.0.1",
     server_port: 8082,
-    active_profile: "work",
+    active_profile: "Work Provider",
     profiles: [
       {
         name: "Work Provider",
@@ -494,10 +541,10 @@ test("setActiveProfile updates the selected model provider", async () => {
     ]
   });
 
-  await setActiveProfile(configPath, "personal");
+  await setActiveProfile(configPath, "Personal Provider");
 
   const { document } = await readConfigDocument(configPath);
-  assert.equal(document.active_profile, "personal");
+  assert.equal(document.active_profile, "Personal Provider");
 
   await fs.rm(rootDir, { recursive: true, force: true });
 });
@@ -509,7 +556,7 @@ test("updateProfile updates the selected non-active profile in place", async () 
   await writeConfigDocument(configPath, {
     server_host: "127.0.0.1",
     server_port: 8082,
-    active_profile: "work",
+    active_profile: "Work Provider",
     profiles: [
       {
         name: "Work Provider",
@@ -534,7 +581,7 @@ test("updateProfile updates the selected non-active profile in place", async () 
     ]
   });
 
-  await updateProfile(configPath, "personal", {
+  await updateProfile(configPath, "Personal Provider", {
     name: "Personal Workspace",
     base_url: "https://edited.example/v1",
     api_key: "sk-edited",
@@ -542,7 +589,7 @@ test("updateProfile updates the selected non-active profile in place", async () 
   });
 
   const { document } = await readConfigDocument(configPath);
-  assert.equal(document.active_profile, "work");
+  assert.equal(document.active_profile, "Work Provider");
   assert.equal(document.profiles[1].model_provider, "personal");
   assert.equal(document.profiles[1].name, "Personal Workspace");
   assert.equal(document.profiles[1].base_url, "https://edited.example/v1");
@@ -558,7 +605,7 @@ test("deleteProfile removes a non-active profile", async () => {
   await writeConfigDocument(configPath, {
     server_host: "127.0.0.1",
     server_port: 8082,
-    active_profile: "work",
+    active_profile: "Work Provider",
     profiles: [
       {
         name: "Work Provider",
@@ -583,10 +630,10 @@ test("deleteProfile removes a non-active profile", async () => {
     ]
   });
 
-  await deleteProfile(configPath, "personal");
+  await deleteProfile(configPath, "Personal Provider");
 
   const { document } = await readConfigDocument(configPath);
-  assert.equal(document.active_profile, "work");
+  assert.equal(document.active_profile, "Work Provider");
   assert.deepEqual(
     document.profiles.map((profile) => profile.model_provider),
     ["work"]
@@ -602,7 +649,7 @@ test("deleteProfile rejects deleting the active profile", async () => {
   await writeConfigDocument(configPath, {
     server_host: "127.0.0.1",
     server_port: 8082,
-    active_profile: "work",
+    active_profile: "Work Provider",
     profiles: [
       {
         name: "Work Provider",
@@ -617,7 +664,10 @@ test("deleteProfile rejects deleting the active profile", async () => {
     ]
   });
 
-  await assert.rejects(() => deleteProfile(configPath, "work"), /Cannot delete the active profile: work/);
+  await assert.rejects(
+    () => deleteProfile(configPath, "Work Provider"),
+    /Cannot delete the active profile: Work Provider/
+  );
 
   await fs.rm(rootDir, { recursive: true, force: true });
 });
@@ -630,7 +680,7 @@ test("updateClaudeConfig updates global Claude settings and the active profile m
     server_host: "127.0.0.1",
     server_port: 8082,
     claude_dir: "~/.claude",
-    active_profile: "work",
+    active_profile: "Work Provider",
     profiles: [
       {
         name: "Work Provider",

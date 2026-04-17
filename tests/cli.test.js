@@ -4,6 +4,7 @@ const fs = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
 const { execFile, spawn } = require("node:child_process");
+const toml = require("@iarna/toml");
 
 const projectRoot = path.resolve(__dirname, "..");
 
@@ -25,6 +26,10 @@ function runCliWithInput(args, options = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, ["./src/cli.js", ...args], {
       cwd: options.cwd || projectRoot,
+      env: {
+        ...process.env,
+        ...(options.env || {})
+      },
       stdio: ["pipe", "pipe", "pipe"]
     });
 
@@ -164,7 +169,7 @@ test("config get prints config, Claude, and Codex summaries with key fields", as
     [
       'server_host = "127.0.0.1"',
       "server_port = 8082",
-      'active_profile = "work"',
+      'active_profile = "Work Provider"',
       `claude_dir = ${JSON.stringify(claudeDir)}`,
       `codex_dir = ${JSON.stringify(codexDir)}`,
       "",
@@ -259,7 +264,7 @@ test("config get prints config, Claude, and Codex summaries with key fields", as
   assert.equal(stderr, "");
   assert.match(stdout, /Config File/);
   assert.match(stdout, new RegExp(configPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
-  assert.match(stdout, /active_profile: work/);
+  assert.match(stdout, /active_profile: Work Provider/);
   assert.match(stdout, /profiles: 2/);
   assert.match(stdout, /Active Profile/);
   assert.match(stdout, /name: Work Provider/);
@@ -335,7 +340,7 @@ test("config use updates active_profile and syncs Codex credentials for the chos
       "server_port = 8082",
       `claude_dir = ${JSON.stringify(claudeDir)}`,
       `codex_dir = ${JSON.stringify(codexDir)}`,
-      'active_profile = "work"',
+      'active_profile = "Work Provider"',
       "",
       "[[profiles]]",
       'name = "Work Provider"',
@@ -385,37 +390,125 @@ test("config use updates active_profile and syncs Codex credentials for the chos
   assert.match(stdout, /Configured OpenAI environment/);
 
   const { document } = await require("../src/config").readConfigDocument(configPath);
-  assert.equal(document.active_profile, "personal");
+  assert.equal(document.active_profile, "Personal Workspace");
 
   const codexConfig = await fs.readFile(path.join(codexDir, "config.toml"), "utf8");
   const codexAuth = JSON.parse(await fs.readFile(path.join(codexDir, "auth.json"), "utf8"));
   assert.match(codexConfig, /model_provider = "personal"/);
-  assert.match(codexConfig, /name = "Personal Workspace"/);
+  assert.match(codexConfig, /model = "sonnet"/);
   assert.match(codexConfig, /\[model_providers\.personal\]/);
-  assert.match(codexConfig, /\[model_providers\.personal\][\s\S]*name = "Personal Workspace"/);
   assert.match(codexConfig, /base_url = "https:\/\/personal\.example\/v1"/);
   assert.doesNotMatch(codexConfig, /\[model_providers\.work\]/);
+  const codexConfigDocument = toml.parse(codexConfig);
+  assert.equal(codexConfigDocument.name, undefined);
+  assert.equal(codexConfigDocument.model_providers.personal.name, "Personal Workspace");
   assert.equal(codexAuth.OPENAI_API_KEY, "sk-personal");
 
   await fs.rm(rootDir, { recursive: true, force: true });
 });
 
-test("config add defaults model_provider to OpenAI and name to the same value", async () => {
+test("config use without --config merges codex [projects] into the default ~/.claude-proxy/config.toml", async () => {
+  const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), "claude-proxy-cli-default-config-use-"));
+  const homeDir = path.join(rootDir, "home");
+  const defaultConfigPath = path.join(homeDir, ".claude-proxy", "config.toml");
+  const codexDir = path.join(homeDir, ".codex");
+
+  await fs.mkdir(path.dirname(defaultConfigPath), { recursive: true });
+  await fs.mkdir(codexDir, { recursive: true });
+  await fs.writeFile(
+    defaultConfigPath,
+    [
+      'server_host = "127.0.0.1"',
+      "server_port = 8082",
+      'active_profile = "Work Provider"',
+      "",
+      '[projects."/existing/project"]',
+      'trust_level = "trusted"',
+      "",
+      "[[profiles]]",
+      'name = "Work Provider"',
+      'model_provider = "work"',
+      'base_url = "https://work.example/v1"',
+      'api_key = "sk-work"',
+      'big_model = "gpt-5.4"',
+      'middle_model = "gpt-5.3-codex"',
+      'small_model = "gpt-5.2-codex"',
+      'default_claude_model = "opus[1m]"',
+      "",
+      "[[profiles]]",
+      'name = "Personal Workspace"',
+      'model_provider = "personal"',
+      'base_url = "https://personal.example/v1"',
+      'api_key = "sk-personal"',
+      'big_model = "gpt-4.1"',
+      'middle_model = "gpt-4.1-mini"',
+      'small_model = "gpt-4.1-nano"',
+      'default_claude_model = "sonnet"',
+      ""
+    ].join("\n")
+  );
+  await fs.writeFile(
+    path.join(codexDir, "config.toml"),
+    [
+      'model_provider = "work"',
+      'name = "Work Provider"',
+      "",
+      "[model_providers.work]",
+      'name = "Work Provider"',
+      'base_url = "https://old.example/v1"',
+      "",
+      '[projects."/existing/project"]',
+      'trust_level = "untrusted"',
+      "",
+      '[projects."/missing/project"]',
+      'trust_level = "trusted"',
+      'extra = "keep-me"',
+      ""
+    ].join("\n")
+  );
+  await fs.writeFile(
+    path.join(codexDir, "auth.json"),
+    JSON.stringify({ OPENAI_API_KEY: "sk-old" }, null, 2)
+  );
+
+  const { stdout, stderr } = await runCliWithInput(
+    ["config", "use"],
+    {
+      env: { HOME: homeDir },
+      input: "2\n"
+    }
+  );
+
+  assert.equal(stderr, "");
+  assert.match(stdout, /Configured OpenAI environment/);
+
+  const { document } = await require("../src/config").readConfigDocument(defaultConfigPath);
+  assert.equal(document.active_profile, "Personal Workspace");
+  assert.equal(document.projects["/existing/project"].trust_level, "trusted");
+  assert.deepEqual(document.projects["/missing/project"], {
+    trust_level: "trusted",
+    extra: "keep-me"
+  });
+
+  await fs.rm(rootDir, { recursive: true, force: true });
+});
+
+test("config add requires a name and defaults model_provider to OpenAI", async () => {
   const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), "claude-proxy-cli-add-defaults-"));
   const configPath = path.join(rootDir, "config.toml");
 
   const { stdout, stderr } = await runCliWithInput(
     ["config", "add", "--config", configPath],
-    { input: "\n\nhttps://openai.example/v1\nsk-openai\n\n\n\n\n" }
+    { input: "OpenAI Primary\n\nhttps://openai.example/v1\nsk-openai\n\n\n\n\n" }
   );
 
   assert.equal(stderr, "");
-  assert.match(stdout, /Added profile: OpenAI/);
+  assert.match(stdout, /Added profile: OpenAI Primary/);
 
   const { document } = await require("../src/config").readConfigDocument(configPath);
-  assert.equal(document.active_profile, "OpenAI");
+  assert.equal(document.active_profile, "OpenAI Primary");
   assert.equal(document.profiles[0].model_provider, "OpenAI");
-  assert.equal(document.profiles[0].name, "OpenAI");
+  assert.equal(document.profiles[0].name, "OpenAI Primary");
 
   await fs.rm(rootDir, { recursive: true, force: true });
 });
@@ -429,7 +522,7 @@ test("config alt edits the chosen profile in place", async () => {
     [
       'server_host = "127.0.0.1"',
       "server_port = 8082",
-      'active_profile = "work"',
+      'active_profile = "Work Provider"',
       "",
       "[[profiles]]",
       'name = "Work Provider"',
@@ -460,10 +553,10 @@ test("config alt edits the chosen profile in place", async () => {
   );
 
   assert.equal(stderr, "");
-  assert.match(stdout, /Updated profile: personal/);
+  assert.match(stdout, /Updated profile: Personal Workspace/);
 
   const { document } = await require("../src/config").readConfigDocument(configPath);
-  assert.equal(document.active_profile, "work");
+  assert.equal(document.active_profile, "Work Provider");
   assert.equal(document.profiles[1].model_provider, "personal");
   assert.equal(document.profiles[1].name, "Personal Workspace");
   assert.equal(document.profiles[1].base_url, "https://edited.example/v1");
@@ -481,9 +574,10 @@ test("config del removes the chosen non-active profile", async () => {
     [
       'server_host = "127.0.0.1"',
       "server_port = 8082",
-      'active_profile = "work"',
+      'active_profile = "Work Provider"',
       "",
       "[[profiles]]",
+      'name = "Work Provider"',
       'model_provider = "work"',
       'base_url = "https://work.example/v1"',
       'api_key = "sk-work"',
@@ -493,6 +587,7 @@ test("config del removes the chosen non-active profile", async () => {
       'default_claude_model = "opus[1m]"',
       "",
       "[[profiles]]",
+      'name = "Personal Provider"',
       'model_provider = "personal"',
       'base_url = "https://personal.example/v1"',
       'api_key = "sk-personal"',
@@ -510,10 +605,10 @@ test("config del removes the chosen non-active profile", async () => {
   );
 
   assert.equal(stderr, "");
-  assert.match(stdout, /Deleted profile: personal/);
+  assert.match(stdout, /Deleted profile: Personal Provider/);
 
   const { document } = await require("../src/config").readConfigDocument(configPath);
-  assert.equal(document.active_profile, "work");
+  assert.equal(document.active_profile, "Work Provider");
   assert.deepEqual(
     document.profiles.map((profile) => profile.model_provider),
     ["work"]

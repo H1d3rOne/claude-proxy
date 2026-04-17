@@ -9,6 +9,7 @@ const {
   readJson,
   writeJson
 } = require("../utils");
+const { readConfigDocument, writeConfigDocument } = require("../config");
 const { cleanClaudeSettings, patchClaudeSettings } = require("./host-manager");
 
 function getEmptyManagedState() {
@@ -108,6 +109,7 @@ function patchCodexConfigDocument(document, host, config = {}) {
     providerName ||
     null;
   const baseUrl = host.base_url || config.base_url;
+  const model = host.default_claude_model || config.default_claude_model || null;
 
   if (providerName) {
     const existingProviderName = getCodexProviderName(patched, null);
@@ -120,14 +122,19 @@ function patchCodexConfigDocument(document, host, config = {}) {
       existingProviderName && existingProviderName !== providerName
         ? currentProviders[existingProviderName]
         : null;
+    const baseProviderConfig = selectedProviderConfig || previousProviderConfig || {};
+    const { model: _ignoredModel, ...providerConfigWithoutModel } = baseProviderConfig;
 
     patched.model_provider = providerName;
-    patched.name = providerDisplayName;
+    delete patched.name;
+    if (model) {
+      patched.model = model;
+    }
     if (existingProviderName && existingProviderName !== providerName) {
       delete currentProviders[existingProviderName];
     }
     currentProviders[providerName] = {
-      ...(selectedProviderConfig || previousProviderConfig || {}),
+      ...providerConfigWithoutModel,
       name: providerDisplayName,
       base_url: baseUrl
     };
@@ -137,16 +144,26 @@ function patchCodexConfigDocument(document, host, config = {}) {
 
   const existingProviderName = getCodexProviderName(patched, null);
   if (existingProviderName) {
+    const existingProviderConfig = patched.model_providers?.[existingProviderName] || {};
+    const { model: _ignoredModel, ...providerConfigWithoutModel } = existingProviderConfig;
+    delete patched.name;
     patched.model_providers = patched.model_providers || {};
     patched.model_providers[existingProviderName] = {
-      ...(patched.model_providers[existingProviderName] || {}),
+      ...providerConfigWithoutModel,
       ...(providerDisplayName ? { name: providerDisplayName } : {}),
       base_url: baseUrl
     };
+    if (model) {
+      patched.model = model;
+    }
     return patched;
   }
 
   patched.base_url = baseUrl;
+  delete patched.name;
+  if (model) {
+    patched.model = model;
+  }
   return patched;
 }
 
@@ -163,6 +180,61 @@ async function patchCodexAuth(config, host, state) {
   await writeJson(host.codex_auth_path, auth);
 }
 
+function cloneTomlValue(value) {
+  if (Array.isArray(value)) {
+    return value.map(cloneTomlValue);
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, nestedValue]) => [key, cloneTomlValue(nestedValue)])
+    );
+  }
+  return value;
+}
+
+async function syncCodexProjectsToConfig(config, host) {
+  if (!config?.__configPath) {
+    return false;
+  }
+
+  const codexDocument = await readToml(host.codex_config_path, {});
+  const codexProjects =
+    codexDocument.projects && typeof codexDocument.projects === "object"
+      ? codexDocument.projects
+      : null;
+
+  if (!codexProjects || Object.keys(codexProjects).length === 0) {
+    return false;
+  }
+
+  const { resolvedConfigPath, document } = await readConfigDocument(config.__configPath, {
+    allowMissing: true
+  });
+  const currentProjects =
+    document.projects && typeof document.projects === "object"
+      ? { ...document.projects }
+      : {};
+
+  let changed = false;
+  for (const [projectPath, projectConfig] of Object.entries(codexProjects)) {
+    if (Object.prototype.hasOwnProperty.call(currentProjects, projectPath)) {
+      continue;
+    }
+    currentProjects[projectPath] = cloneTomlValue(projectConfig);
+    changed = true;
+  }
+
+  if (!changed) {
+    return false;
+  }
+
+  await writeConfigDocument(resolvedConfigPath, {
+    ...document,
+    projects: currentProjects
+  });
+  return true;
+}
+
 function getManagedApplyEntries(host, config, state) {
   return {
     codex_config: {
@@ -172,6 +244,10 @@ function getManagedApplyEntries(host, config, state) {
     codex_auth: {
       label: `Update Codex auth (${host.codex_auth_path})`,
       action: () => patchCodexAuth(config, host, state)
+    },
+    config_projects: {
+      label: `Sync config projects (${config.__configPath})`,
+      action: () => syncCodexProjectsToConfig(config, host)
     },
     claude_settings: {
       label: `Update Claude settings (${host.settings_path})`,
@@ -209,11 +285,16 @@ async function applyClaudeManagedHostConfig(config, host, options = {}) {
 }
 
 async function applyOpenAIManagedHostConfig(config, host, options = {}) {
-  return applyManagedEntries(config, host, ["codex_config", "codex_auth"], options);
+  return applyManagedEntries(config, host, ["codex_config", "codex_auth", "config_projects"], options);
 }
 
 async function applyManagedHostConfig(config, host, options = {}) {
-  return applyManagedEntries(config, host, ["codex_config", "codex_auth", "claude_settings"], options);
+  return applyManagedEntries(
+    config,
+    host,
+    ["codex_config", "codex_auth", "config_projects", "claude_settings"],
+    options
+  );
 }
 
 async function restoreManagedFile(host, entry) {
@@ -329,5 +410,6 @@ module.exports = {
   cleanClaudeManagedHostConfig,
   cleanManagedHostConfig,
   cleanOpenAIManagedHostConfig,
-  patchCodexConfigDocument
+  patchCodexConfigDocument,
+  syncCodexProjectsToConfig
 };

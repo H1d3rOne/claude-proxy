@@ -57,7 +57,7 @@ function createStepLogger(config) {
 
 function getActiveProfile(config) {
   return Array.isArray(config?.profiles)
-    ? config.profiles.find((profile) => profile.model_provider === config.active_profile) || null
+    ? config.profiles.find((profile) => profile.name === config.active_profile) || null
     : null;
 }
 
@@ -125,15 +125,17 @@ async function promptForProfileSelectionWithSession(rl, config, label) {
 
   const defaultIndex = Math.max(
     0,
-    profiles.findIndex((profile) => profile.model_provider === config.active_profile)
+    profiles.findIndex((profile) => profile.name === config.active_profile)
   );
 
   console.log("Available profiles:");
   profiles.forEach((profile, index) => {
-    const activeSuffix = profile.model_provider === config.active_profile ? " (active)" : "";
-    const nameSuffix =
-      profile.name && profile.name !== profile.model_provider ? ` [${profile.name}]` : "";
-    console.log(`  ${index + 1}. ${profile.model_provider}${nameSuffix}${activeSuffix}`);
+    const activeSuffix = profile.name === config.active_profile ? " (active)" : "";
+    const providerSuffix =
+      profile.model_provider && profile.model_provider !== profile.name
+        ? ` [${profile.model_provider}]`
+        : "";
+    console.log(`  ${index + 1}. ${profile.name}${providerSuffix}${activeSuffix}`);
   });
 
   for (;;) {
@@ -152,11 +154,11 @@ async function promptForProfileSelectionWithSession(rl, config, label) {
             return true;
           }
 
-          if (profiles.some((profile) => profile.model_provider === value)) {
+          if (profiles.some((profile) => profile.name === value)) {
             return true;
           }
 
-          return "Please choose an existing profile number or model_provider.";
+          return "Please choose an existing profile number or name.";
         }
       }
     );
@@ -166,7 +168,7 @@ async function promptForProfileSelectionWithSession(rl, config, label) {
       return profiles[numericChoice - 1];
     }
 
-    const namedProfile = profiles.find((profile) => profile.model_provider === answer);
+    const namedProfile = profiles.find((profile) => profile.name === answer);
     if (namedProfile) {
       return namedProfile;
     }
@@ -179,13 +181,13 @@ async function promptForProfileSelection(config, label) {
 
 async function promptForNewProfile(config) {
   const activeProfile = getActiveProfile(config);
-  const existingNames = new Set((config.profiles || []).map((profile) => profile.model_provider));
+  const existingNames = new Set((config.profiles || []).map((profile) => profile.name));
 
   return withPromptSession(async (rl) => {
-    const modelProvider = await promptForValue(rl, "model_provider", "OpenAI", {
+    const name = await promptForValue(rl, "name", "", {
       validate(value) {
         if (!value) {
-          return "model_provider must be non-empty.";
+          return "name must be non-empty.";
         }
         if (existingNames.has(value)) {
           return `Profile already exists: ${value}`;
@@ -193,10 +195,11 @@ async function promptForNewProfile(config) {
         return true;
       }
     });
+    const modelProvider = await promptForValue(rl, "model_provider", "OpenAI");
 
     return {
+      name,
       model_provider: modelProvider,
-      name: await promptForValue(rl, "name", modelProvider),
       base_url: await promptForValue(rl, "base_url", activeProfile?.base_url || ""),
       api_key: await promptForValue(rl, "api_key", activeProfile?.api_key || ""),
       big_model: await promptForValue(
@@ -223,9 +226,19 @@ async function promptForNewProfile(config) {
   });
 }
 
-async function promptForProfileEditsWithSession(rl, profile) {
+async function promptForProfileEditsWithSession(rl, profile, existingNames = new Set()) {
   return {
-    name: await promptForValue(rl, "name", profile?.name || profile?.model_provider || ""),
+    name: await promptForValue(rl, "name", profile?.name || profile?.model_provider || "", {
+      validate(value) {
+        if (!value) {
+          return "name must be non-empty.";
+        }
+        if (existingNames.has(value)) {
+          return `Profile already exists: ${value}`;
+        }
+        return true;
+      }
+    }),
     base_url: await promptForValue(rl, "base_url", profile?.base_url || ""),
     api_key: await promptForValue(rl, "api_key", profile?.api_key || ""),
     big_model: await promptForValue(
@@ -415,8 +428,8 @@ function formatProfilesSection(profiles = [], activeProfileName = null) {
 
   const lines = [];
   for (const [index, profile] of profiles.entries()) {
-    const activeSuffix = profile.model_provider === activeProfileName ? " (active)" : "";
-    lines.push(`  name: ${formatValue(profile.name)}`);
+    const activeSuffix = profile.name === activeProfileName ? " (active)" : "";
+    lines.push(`  name: ${formatValue(profile.name)}${activeSuffix}`);
     lines.push(`- model_provider: ${formatValue(profile.model_provider)}${activeSuffix}`);
     lines.push(`  base_url: ${formatValue(profile.base_url)}`);
     lines.push(`  api_key: ${formatValue(profile.api_key)}`);
@@ -642,7 +655,7 @@ async function main() {
       await addProfile(configPath, profile, {
         runtimeProjectRoot: PROJECT_ROOT
       });
-      console.log(`Added profile: ${profile.model_provider}`);
+      console.log(`Added profile: ${profile.name}`);
     });
 
   configCommand
@@ -657,7 +670,7 @@ async function main() {
         runtimeProjectRoot: PROJECT_ROOT
       });
       const selectedProfile = await promptForProfileSelection(currentConfig, "Choose a profile");
-      await setActiveProfile(configPath, selectedProfile.model_provider, {
+      await setActiveProfile(configPath, selectedProfile.name, {
         runtimeProjectRoot: PROJECT_ROOT
       });
       const config = await loadConfig(configPath, {
@@ -683,13 +696,21 @@ async function main() {
           currentConfig,
           "Edit which profile"
         );
-        const updates = await promptForProfileEditsWithSession(rl, selectedProfile);
+        const updates = await promptForProfileEditsWithSession(
+          rl,
+          selectedProfile,
+          new Set(
+            currentConfig.profiles
+              .map((profile) => profile.name)
+              .filter((name) => name !== selectedProfile.name)
+          )
+        );
         return { selectedProfile, updates };
       });
-      await updateProfile(configPath, selectedProfile.model_provider, updates, {
+      await updateProfile(configPath, selectedProfile.name, updates, {
         runtimeProjectRoot: PROJECT_ROOT
       });
-      console.log(`Updated profile: ${selectedProfile.model_provider}`);
+      console.log(`Updated profile: ${updates.name}`);
     });
 
   configCommand
@@ -704,10 +725,10 @@ async function main() {
         runtimeProjectRoot: PROJECT_ROOT
       });
       const selectedProfile = await promptForProfileSelection(currentConfig, "Delete which profile");
-      await deleteProfile(configPath, selectedProfile.model_provider, {
+      await deleteProfile(configPath, selectedProfile.name, {
         runtimeProjectRoot: PROJECT_ROOT
       });
-      console.log(`Deleted profile: ${selectedProfile.model_provider}`);
+      console.log(`Deleted profile: ${selectedProfile.name}`);
     });
 
   configCommand
